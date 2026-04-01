@@ -383,7 +383,7 @@ interface InitializePaymentRequest {
   shippingAddress: Record<string, unknown>
   notes?: string
   couponCode?: string
-  paymentMethod?: 'paystack' | 'opay' | 'wallet'
+  paymentMethod?: 'paystack' | 'wallet'
 }
 
 interface PaystackWebhookEvent {
@@ -498,16 +498,14 @@ export const paymentController = {
         return
       }
 
-      // 4. Calculate amount (use kobo for Paystack, naira for OPay)
-      const provider = paymentService.getPaymentProvider()
+      // 4. Calculate amount (Paystack uses kobo)
       const amountInKobo = Math.round(Number(order.total) * 100)
-      const amount = provider === 'opay' ? Number(order.total) : amountInKobo
 
-      // 5. Initialize payment with secure metadata (uses configured provider)
+      // 5. Initialize payment with secure metadata
       const customerEmail = (shippingAddress.email as string) ?? user.email
       const payment = await paymentService.initializePayment({
         email: customerEmail,
-        amount: amount,
+        amount: amountInKobo,
         reference: order.reference,
         metadata: {
           orderId: order.id,
@@ -519,7 +517,7 @@ export const paymentController = {
         callbackUrl: `${process.env.FRONTEND_URL}/order-confirmation?reference=${order.reference}`,
       })
 
-      logger.info(`Payment initialized for order ${order.reference}: ${amount} (${provider})`)
+      logger.info(`Payment initialized for order ${order.reference}: ${amountInKobo} (paystack)`)
 
       // Return order details and payment authorization URL
       ok(res, {
@@ -554,7 +552,7 @@ export const paymentController = {
     const order = await OrderModel.findByReference(paymentRef)
     if (!order) { notFound(res, 'Order not found for this payment reference'); return }
 
-    // Verify with payment provider (Paystack or OPay)
+    // Verify with Paystack
     let paymentResult: Awaited<ReturnType<typeof paymentService.verifyPayment>>
     try {
       paymentResult = await paymentService.verifyPayment(paymentRef)
@@ -650,21 +648,11 @@ export const paymentController = {
    * - Idempotent - ignores duplicate events
    * - Validates amount and email server-side
    * - Works even if user closes browser
-   * 
-   * NOTE: Currently only supports Paystack webhooks. OPay webhooks need separate implementation.
    */
   async webhook(req: Request, res: Response): Promise<void> {
-    const provider = paymentService.getPaymentProvider()
-    const webhookHeaderName = paymentService.getWebhookHeaderName()
+    const webhookHeaderName = 'x-paystack-signature'
     const signature = req.headers[webhookHeaderName] as string
     const rawBody = req.body as Buffer
-
-    // If using OPay, return a placeholder message (OPay webhook handling is different)
-    if (provider === 'opay') {
-      logger.info('OPay webhook received - manual verification required for now')
-      res.status(200).json({ message: 'OPay webhook received' })
-      return
-    }
 
     // SECURITY: Validate webhook signature (Paystack)
     const isValid = paystackService.validateWebhookSignature(rawBody, signature)

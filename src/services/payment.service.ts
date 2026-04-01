@@ -1,22 +1,22 @@
 /**
  * Unified Payment Service
- * Supports both Paystack and OPay based on configuration
+ * Supports only Paystack payment gateway
  */
 
 import * as paystackService from './paystack.service'
-import * as opayService from './opay.service'
 import { logger } from '@/utils/logger'
 
-const PAYMENT_PROVIDER = process.env.PAYMENT_PROVIDER ?? 'paystack'
+// Fixed to Paystack as the only payment provider
+const PAYMENT_PROVIDER = 'paystack' as const
 
-export type PaymentProvider = 'paystack' | 'opay'
+export type PaymentProvider = 'paystack'
 
 // Get the current payment provider
 export function getPaymentProvider(): PaymentProvider {
-  return PAYMENT_PROVIDER as PaymentProvider
+  return PAYMENT_PROVIDER
 }
 
-// Initialize payment based on configured provider
+// Initialize payment with Paystack
 export async function initializePayment(params: {
   email: string
   amount: number
@@ -27,19 +27,6 @@ export async function initializePayment(params: {
   authorizationUrl: string
   reference: string
 }> {
-  if (PAYMENT_PROVIDER === 'opay') {
-    logger.info(`Initializing OPay payment for ${params.reference}`)
-    const result = await opayService.initializeOPayPayment({
-      ...params,
-      amount: Math.round(params.amount / 100), // Convert from kobo to naira if needed
-    })
-    return {
-      authorizationUrl: result.checkoutUrl,
-      reference: result.reference,
-    }
-  }
-
-  // Default to Paystack
   logger.info(`Initializing Paystack payment for ${params.reference}`)
   const result = await paystackService.initializePayment(params)
   return {
@@ -48,7 +35,7 @@ export async function initializePayment(params: {
   }
 }
 
-// Verify payment based on configured provider
+// Verify payment with Paystack
 export async function verifyPayment(reference: string): Promise<{
   success: boolean
   status: 'success' | 'failed' | 'pending'
@@ -56,19 +43,6 @@ export async function verifyPayment(reference: string): Promise<{
   email?: string
   channel?: string
 }> {
-  if (PAYMENT_PROVIDER === 'opay') {
-    logger.info(`Verifying OPay payment for ${reference}`)
-    const result = await opayService.verifyOPayTransaction(reference)
-    return {
-      success: result.success,
-      status: result.status === 'SUCCESS' ? 'success' : result.status === 'PENDING' ? 'pending' : 'failed',
-      amount: result.amount,
-      email: result.customerEmail,
-      channel: result.channel,
-    }
-  }
-
-  // Default to Paystack
   logger.info(`Verifying Paystack payment for ${reference}`)
   const result = await paystackService.verifyTransaction(reference)
   const paystackStatus = result.data.status
@@ -87,38 +61,24 @@ export async function verifyPayment(reference: string): Promise<{
   }
 }
 
-// Validate webhook signature based on configured provider
+// Validate webhook signature for Paystack
 export function validateWebhookSignature(
   payload: Buffer | string,
   signature: string
 ): boolean {
-  if (PAYMENT_PROVIDER === 'opay') {
-    return opayService.validateOPayWebhookSignature(
-      typeof payload === 'string' ? payload : payload.toString(),
-      signature
-    )
-  }
-
-  // Default to Paystack
   return paystackService.validateWebhookSignature(
     typeof payload === 'string' ? Buffer.from(payload) : payload,
     signature
   )
 }
 
-// Get webhook header name based on provider
+// Get webhook header name for Paystack
 export function getWebhookHeaderName(): string {
-  if (PAYMENT_PROVIDER === 'opay') {
-    return 'x-opay-signature'
-  }
   return 'x-paystack-signature'
 }
 
-// Get list of banks based on configured provider
+// Get list of banks from Paystack
 export async function getBanks(): Promise<Array<{ name: string; code: string }>> {
-  if (PAYMENT_PROVIDER === 'opay') {
-    return opayService.getOPayBanks()
-  }
   return paystackService.getBanks()
 }
 

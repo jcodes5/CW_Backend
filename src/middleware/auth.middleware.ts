@@ -1,11 +1,12 @@
-import type { Response, NextFunction } from 'express'
+import type { Request, Response, NextFunction } from 'express'
 import type { AuthRequest, UserRole } from '@/types'
 import { verifyAccessToken } from '@/utils/jwt'
 import { unauthorized, forbidden } from '@/utils/response'
 
 // ── Require valid JWT ─────────────────────────────────────────
-export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization
+export function authenticate(req: Request, res: Response, next: NextFunction): void {
+  const authReq = req as AuthRequest
+  const authHeader = authReq.headers.authorization
 
   if (!authHeader?.startsWith('Bearer ')) {
     unauthorized(res, 'No authentication token provided')
@@ -15,7 +16,7 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
   const token = authHeader.slice(7)
 
   try {
-    req.user = verifyAccessToken(token)
+    authReq.user = verifyAccessToken(token)
     next()
   } catch (err) {
     if (err instanceof Error && err.name === 'TokenExpiredError') {
@@ -27,12 +28,13 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
 }
 
 // ── Optional auth — attaches user if token present, doesn't fail ─
-export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization
+export function optionalAuth(req: Request, _res: Response, next: NextFunction): void {
+  const authReq = req as AuthRequest
+  const authHeader = authReq.headers.authorization
 
   if (authHeader?.startsWith('Bearer ')) {
     try {
-      req.user = verifyAccessToken(authHeader.slice(7))
+      authReq.user = verifyAccessToken(authHeader.slice(7))
     } catch {
       // Silently ignore invalid/expired tokens for optional routes
     }
@@ -43,12 +45,13 @@ export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunctio
 
 // ── Require specific role(s) ──────────────────────────────────
 export function requireRole(...roles: UserRole[]) {
-  return (req: AuthRequest, res: Response, next: NextFunction): void => {
-    if (!req.user) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const authReq = req as AuthRequest
+    if (!authReq.user) {
       unauthorized(res)
       return
     }
-    if (!roles.includes(req.user.role)) {
+    if (!roles.includes(authReq.user.role)) {
       forbidden(res, `Requires role: ${roles.join(' or ')}`)
       return
     }

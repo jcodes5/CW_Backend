@@ -23,11 +23,13 @@ export interface UserRow {
   last_name: string
   email: string
   phone: string | null
-  password_hash: string
+  password_hash: string | null
   avatar: string | null
   role: UserRole
   is_verified: number
   is_active: number
+  provider: 'local' | 'google' | 'facebook'
+  provider_id: string | null
   created_at: Date
   updated_at: Date
 }

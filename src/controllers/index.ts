@@ -16,6 +16,7 @@ import {
   ok, created, paginated, badRequest, unauthorized,
   forbidden, notFound, conflict, serverError, noContent,
 } from '@/utils/response'
+import passport from '@/config/passport'
 import {
   sendWelcomeEmail, sendPasswordResetEmail,
   sendOrderConfirmationEmail, sendOrderStatusEmail,
@@ -209,6 +210,99 @@ export const authController = {
 
     await AuthModel.updatePassword(user.id, newPassword)
     ok(res, null, 'Password changed successfully')
+  },
+
+  // ── OAuth Login Functions ─────────────────────────────────────
+
+  async googleLogin(req: Request, res: Response): Promise<void> {
+    // This will redirect to Google
+    passport.authenticate('google', {
+      scope: ['profile', 'email'],
+      session: false,
+    })(req, res)
+  },
+
+  async googleCallback(req: Request, res: Response): Promise<void> {
+    passport.authenticate('google', { session: false }, async (err: any, user: any) => {
+      if (err || !user) {
+        const errorMsg = err?.message || 'Google authentication failed'
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+        return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(errorMsg)}`)
+      }
+
+      try {
+        // Generate JWT tokens
+        const tokens = generateTokenPair({
+          userId: user.id,
+          email: user.email,
+          role: user.role
+        })
+
+        // Store refresh token
+        await AuthModel.storeRefreshToken(user.id, tokens.refreshToken)
+
+        // Set HTTP-only refresh token cookie
+        res.cookie('refreshToken', tokens.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+        })
+
+        // Redirect to frontend with access token
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+        res.redirect(`${frontendUrl}/oauth/callback?token=${tokens.accessToken}`)
+      } catch (error) {
+        console.error('OAuth callback error:', error)
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+        res.redirect(`${frontendUrl}/login?error=${encodeURIComponent('Authentication failed')}`)
+      }
+    })(req, res)
+  },
+
+  async facebookLogin(req: Request, res: Response): Promise<void> {
+    passport.authenticate('facebook', {
+      scope: ['email'],
+      session: false,
+    })(req, res)
+  },
+
+  async facebookCallback(req: Request, res: Response): Promise<void> {
+    passport.authenticate('facebook', { session: false }, async (err: any, user: any) => {
+      if (err || !user) {
+        const errorMsg = err?.message || 'Facebook authentication failed'
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+        return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(errorMsg)}`)
+      }
+
+      try {
+        // Generate JWT tokens
+        const tokens = generateTokenPair({
+          userId: user.id,
+          email: user.email,
+          role: user.role
+        })
+
+        // Store refresh token
+        await AuthModel.storeRefreshToken(user.id, tokens.refreshToken)
+
+        // Set HTTP-only refresh token cookie
+        res.cookie('refreshToken', tokens.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+        })
+
+        // Redirect to frontend with access token
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+        res.redirect(`${frontendUrl}/oauth/callback?token=${tokens.accessToken}`)
+      } catch (error) {
+        console.error('OAuth callback error:', error)
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+        res.redirect(`${frontendUrl}/login?error=${encodeURIComponent('Authentication failed')}`)
+      }
+    })(req, res)
   },
 }
 

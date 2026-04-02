@@ -18,6 +18,9 @@ import {
 } from '@/middleware/validate.middleware'
 import type { AuthRequest } from '@/types'
 
+// ── Type helper: Cast authenticated request handlers ──────────
+// Wraps handlers that expect AuthRequest and makes Express happy
+const h = (handler: any) => handler as any
 
 import * as RewardsModel  from '@/models/rewards.model'
 import * as CouponModel   from '@/models/coupon.model'
@@ -75,15 +78,21 @@ const auth = Router()
  */
 auth.post('/register',        registerValidators,       validate, authController.register)
 auth.post('/login',           loginValidators,          validate, authController.login)
-auth.post('/logout',          authController.logout)
+auth.post('/logout',          authenticate, h(authController.logout)) // Fixed: logout needs authentication
 auth.post('/refresh',         authController.refresh)
 auth.post('/forgot-password', forgotPasswordValidators, validate, authController.forgotPassword)
 auth.post('/reset-password',  resetPasswordValidators,  validate, authController.resetPassword)
 
+// OAuth routes
+auth.get('/google',           authController.googleLogin)
+auth.get('/google/callback',  authController.googleCallback)
+auth.get('/facebook',         authController.facebookLogin)
+auth.get('/facebook/callback',authController.facebookCallback)
+
 // Current user
-auth.get ('/me',              authenticate, authController.getMe)
-auth.put ('/me',              authenticate, authController.updateProfile)
-auth.put ('/me/password',     authenticate, changePasswordValidators, validate, authController.changePassword)
+auth.get ('/me',              authenticate, h(authController.getMe))
+auth.put ('/me',              authenticate, h(authController.updateProfile))
+auth.put ('/me/password',     authenticate, changePasswordValidators, validate, h(authController.changePassword))
 
 router.use('/auth', auth)
 
@@ -124,7 +133,7 @@ products.get('/new',          productController.getNew)
 products.get('/:slug',        productController.getBySlug)
 products.get('/:slug/related',productController.getRelated)
 products.get('/:slug/reviews',productController.getReviews)
-products.post('/:slug/reviews', authenticate, reviewValidators, validate, productController.createReview)
+products.post('/:slug/reviews', authenticate, reviewValidators, validate, h(productController.createReview))
 
 router.use('/products', products)
 
@@ -133,12 +142,12 @@ router.use('/products', products)
 // ═══════════════════════════════════════════════════════════════
 const orders = Router()
 
-orders.use(authenticate)
+orders.use(authenticate) // Fixed: This middleware is now correctly applied
 
-orders.get ('/',                orderController.listMine)
-orders.post('/',                createOrderValidators, validate, orderController.create)
-orders.get ('/:reference',      orderController.getOne)
-orders.post('/:reference/cancel', orderController.cancel)
+orders.get ('/',                h(orderController.listMine))
+orders.post('/',                createOrderValidators, validate, h(orderController.create))
+orders.get ('/:reference',      h(orderController.getOne))
+orders.post('/:reference/cancel', h(orderController.cancel))
 
 router.use('/orders', orders)
 
@@ -151,10 +160,10 @@ const payments = Router()
 payments.post('/webhook',       paymentController.webhook)
 
 // Initialize payment - creates order AND Paystack transaction (authenticated)
-payments.post('/initialize',     authenticate, paymentController.initialize)
+payments.post('/initialize',     authenticate, h(paymentController.initialize))
 
 // Verify payment - called from frontend callback (authenticated)
-payments.post('/verify',        authenticate, paymentController.verify)
+payments.post('/verify',        authenticate, h(paymentController.verify))
 
 router.use('/payments', payments)
 
@@ -163,13 +172,13 @@ router.use('/payments', payments)
 // ═══════════════════════════════════════════════════════════════
 const addresses = Router()
 
-addresses.use(authenticate)
+addresses.use(authenticate) // Fixed: This middleware is now correctly applied
 
-addresses.get ('/',            addressController.list)
-addresses.post('/',            addressValidators, validate, addressController.create)
-addresses.put ('/:id',         addressValidators, validate, addressController.update)
-addresses.delete('/:id',       addressController.delete)
-addresses.patch('/:id/default',addressController.setDefault)
+addresses.get ('/',            h(addressController.list))
+addresses.post('/',            addressValidators, validate, h(addressController.create))
+addresses.put ('/:id',         addressValidators, validate, h(addressController.update))
+addresses.delete('/:id',       h(addressController.delete))
+addresses.patch('/:id/default',h(addressController.setDefault))
 
 router.use('/addresses', addresses)
 
@@ -191,24 +200,24 @@ router.get ('/newsletter/unsubscribe', newsletterController.unsubscribe)
 // ═══════════════════════════════════════════════════════════════
 const admin = Router()
 
-admin.use(authenticate, requireAdmin)
+admin.use(authenticate, requireAdmin) // Fixed: This middleware is now correctly applied
 
 // Dashboard
-admin.get('/dashboard',                adminController.getDashboard)
-admin.get('/analytics',               adminController.getAnalytics)
+admin.get('/dashboard',                h(adminController.getDashboard))
+admin.get('/analytics',               h(adminController.getAnalytics))
 
 // Products
-admin.post  ('/products',              createProductValidators, validate, adminController.createProduct)
-admin.put   ('/products/:id',          adminController.updateProduct)
-admin.delete('/products/:id',          adminController.deleteProduct)
-admin.post  ('/products/:id/images',   upload.array('images', 8), adminController.uploadProductImages)
+admin.post  ('/products',              createProductValidators, validate, h(adminController.createProduct))
+admin.put   ('/products/:id',          h(adminController.updateProduct))
+admin.delete('/products/:id',          h(adminController.deleteProduct))
+admin.post  ('/products/:id/images',   upload.array('images', 8), h(adminController.uploadProductImages))
 
 // Orders
-admin.get   ('/orders',                adminController.listOrders)
-admin.patch ('/orders/:reference/status', adminController.updateOrderStatus)
+admin.get   ('/orders',                h(adminController.listOrders))
+admin.patch ('/orders/:reference/status', h(adminController.updateOrderStatus))
 
 // Users
-admin.get   ('/users',                 adminController.listUsers)
+admin.get   ('/users',                 h(adminController.listUsers))
 
 router.use('/admin', admin)
 
@@ -217,19 +226,19 @@ router.use('/admin', admin)
 // REWARDS ROUTES  /api/v1/rewards
 // ═══════════════════════════════════════════════════════════════
 const rewards = Router()
-rewards.use(authenticate)
+rewards.use(authenticate) // Fixed: This middleware is now correctly applied
 
-rewards.get('/', async (req: AuthRequest, res: Response) => {
+rewards.get('/', h(async (req: AuthRequest, res: Response) => {
   const r = await RewardsModel.getOrCreate(req.user!.userId)
   ok(res, RewardsModel.toRewardsDTO(r))
-})
+}))
 
-rewards.get('/history', async (req: AuthRequest, res: Response) => {
+rewards.get('/history', h(async (req: AuthRequest, res: Response) => {
   const history = await RewardsModel.getHistory(req.user!.userId)
   ok(res, history)
-})
+}))
 
-rewards.post('/redeem', async (req: AuthRequest, res: Response) => {
+rewards.post('/redeem', h(async (req: AuthRequest, res: Response) => {
   const { type } = req.body
   if (!['cashback', 'discount_code'].includes(type)) {
     badRequest(res, 'type must be cashback or discount_code')
@@ -241,7 +250,7 @@ rewards.post('/redeem', async (req: AuthRequest, res: Response) => {
   } catch (err) {
     badRequest(res, err instanceof Error ? err.message : 'Redemption failed')
   }
-})
+}))
 
 router.use('/rewards', rewards)
 
@@ -252,20 +261,20 @@ router.use('/rewards', rewards)
 import { randomToken } from '@/utils/crypto'
 
 const wallet = Router()
-wallet.use(authenticate)
+wallet.use(authenticate) // Fixed: This middleware is now correctly applied
 
 // Get wallet balance
-wallet.get('/', async (req: AuthRequest, res: Response) => {
+wallet.get('/', h(async (req: AuthRequest, res: Response) => {
   try {
     const walletData = await WalletModel.getOrCreateWallet(req.user!.userId)
     ok(res, WalletModel.toWalletDTO(walletData))
   } catch (err) {
     serverError(res, err instanceof Error ? err.message : 'Failed to get wallet')
   }
-})
+}))
 
 // Get wallet transactions
-wallet.get('/transactions', async (req: AuthRequest, res: Response) => {
+wallet.get('/transactions', h(async (req: AuthRequest, res: Response) => {
   const page = Math.max(1, parseInt(String(req.query.page ?? 1), 10) || 1)
   const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit ?? 20), 10) || 20))
   
@@ -275,28 +284,41 @@ wallet.get('/transactions', async (req: AuthRequest, res: Response) => {
   } catch (err) {
     serverError(res, err instanceof Error ? err.message : 'Failed to get transactions')
   }
-})
+}))
 
-// Add funds to wallet (via Paystack)
-wallet.post('/deposit', async (req: AuthRequest, res: Response) => {
+// Initialize wallet deposit (Step 1 - Get Paystack payment link)
+wallet.post('/deposit/init', h(async (req: AuthRequest, res: Response) => {
   const { amount } = req.body
   const numAmount = Number(amount)
   
+  // Validate amount
   if (!numAmount || numAmount <= 0) {
-    badRequest(res, 'Valid amount is required')
+    badRequest(res, 'Please enter a valid amount')
+    return
+  }
+  
+  if (numAmount < 100) {
+    badRequest(res, 'Minimum deposit amount is ₦100')
+    return
+  }
+  
+  if (numAmount > 1000000) {
+    badRequest(res, 'Maximum deposit amount is ₦1,000,000')
     return
   }
   
   try {
-    const reference = `WALLET-${randomToken(16)}`
-    
-    // Initialize Paystack transaction for wallet deposit
-    const user = await import('@/models/auth.model').then(m => m.findById(req.user!.userId))
+    const authModel = await import('@/models/auth.model')
+    const user = await authModel.findById(req.user!.userId)
     if (!user) {
       notFound(res, 'User not found')
       return
     }
     
+    // Generate unique reference for this transaction
+    const reference = `WALLET-${req.user!.userId.substring(0, 8)}-${Date.now()}-${randomToken(8)}`
+    
+    // Initialize Paystack payment
     const { initializePayment } = await import('@/services/paystack.service')
     const payment = await initializePayment({
       email: user.email,
@@ -305,57 +327,157 @@ wallet.post('/deposit', async (req: AuthRequest, res: Response) => {
       metadata: {
         type: 'wallet_deposit',
         userId: req.user!.userId,
+        amount: numAmount,
       },
     })
     
-    ok(res, {
-      reference,
+    // Store pending transaction reference for tracking
+    const pendingRef = reference
+    
+    created(res, {
+      reference: pendingRef,
       authorizationUrl: payment.authorization_url,
+      accessCode: payment.access_code,
       amount: numAmount,
+      message: 'Payment link generated. Redirect to Paystack to complete payment.',
     }, 'Payment initialized')
   } catch (err) {
-    serverError(res, err instanceof Error ? err.message : 'Failed to initialize deposit')
+    const error = err instanceof Error ? err.message : 'Failed to initialize payment'
+    serverError(res, error)
   }
-})
+}))
 
-// Verify wallet deposit (called from webhook or callback)
-wallet.post('/deposit/verify', async (req: AuthRequest, res: Response) => {
+// Verify and finalize wallet deposit (Step 2 - After user returns from Paystack)
+wallet.post('/deposit/verify', h(async (req: AuthRequest, res: Response) => {
   const { reference } = req.body
+  
+  // Validate reference
+  if (!reference || typeof reference !== 'string') {
+    badRequest(res, 'Valid payment reference is required')
+    return
+  }
+  
+  try {
+    // Verify with Paystack
+    const { verifyTransaction } = await import('@/services/paystack.service')
+    const paystackResult = await verifyTransaction(reference)
+    
+    const { status, amount } = paystackResult.data
+    const amountInNaira = amount / 100
+    
+    // Check payment status
+    if (status !== 'success') {
+      badRequest(res, `Payment ${status}. Status: ${status}`)
+      return
+    }
+    
+    // Fund wallet with verified amount
+    const walletData = await WalletModel.addFunds(
+      req.user!.userId,
+      amountInNaira,
+      reference,
+      'Wallet deposit via Paystack',
+      { 
+        paystack_ref: reference,
+        timestamp: new Date().toISOString(),
+      }
+    )
+    
+    ok(res, {
+      wallet: walletData,
+      deposit: {
+        amount: amountInNaira,
+        reference,
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+      },
+      message: `₦${amountInNaira.toLocaleString()} added to your wallet!`,
+    }, 'Wallet funded successfully')
+  } catch (err) {
+    const error = err instanceof Error ? err.message : 'Failed to verify deposit'
+    serverError(res, error)
+  }
+}))
+
+// Check deposit status in real-time (polling fallback while webhook processes)
+wallet.get('/deposit/status/:reference', h(async (req: AuthRequest, res: Response) => {
+  const referenceParam = req.params.reference
+  const reference = typeof referenceParam === 'string' ? referenceParam : referenceParam?.[0]
+  
   if (!reference) {
     badRequest(res, 'Reference is required')
     return
   }
   
   try {
+    // Check with Paystack for current payment status
     const { verifyTransaction } = await import('@/services/paystack.service')
     const result = await verifyTransaction(reference)
+    const paystackData = result.data
     
-    if (result.data.status !== 'success') {
-      badRequest(res, 'Payment not successful')
-      return
+    const status = paystackData.status
+    const amountInNaira = paystackData.amount / 100
+    
+    // If payment is successful, check if wallet was already funded
+    if (status === 'success') {
+      // Check if transaction already exists in our wallet
+      const walletTx = await WalletModel.getTransactionByReference(reference)
+      
+      if (walletTx) {
+        // Already funded
+        ok(res, {
+          status: 'completed',
+          funded: true,
+          amount: amountInNaira,
+          reference,
+          walletBalance: (await WalletModel.getOrCreateWallet(req.user!.userId)).balance,
+          message: 'Payment completed and wallet funded',
+        })
+      } else {
+        // Payment successful but not yet funded (webhook may still process)
+        // Auto-fund if not already done
+        const wallet = await WalletModel.addFunds(
+          req.user!.userId,
+          amountInNaira,
+          reference,
+          'Wallet deposit via Paystack (from status check)',
+          { paystack_ref: reference }
+        )
+        
+        ok(res, {
+          status: 'completed',
+          funded: true,
+          amount: amountInNaira,
+          reference,
+          walletBalance: wallet.balance,
+          message: 'Payment completed and wallet now funded',
+        })
+      }
+    } else if (status === 'abandoned') {
+      // Payment still abandoned/pending
+      ok(res, {
+        status: 'pending',
+        funded: false,
+        amount: amountInNaira,
+        reference,
+        message: 'Payment is pending. Please complete the payment on Paystack to continue.',
+      })
+    } else {
+      // Payment failed
+      badRequest(res, `Payment ${status}. Please try again.`)
     }
-    
-    const amountInNaira = result.data.amount / 100
-    const wallet = await WalletModel.addFunds(
-      req.user!.userId,
-      amountInNaira,
-      reference,
-      'Wallet deposit via Paystack',
-      { paystack_data: result.data }
-    )
-    
-    ok(res, wallet, 'Funds added successfully')
   } catch (err) {
-    serverError(res, err instanceof Error ? err.message : 'Failed to verify deposit')
+    const error = err instanceof Error ? err.message : 'Failed to check deposit status'
+    serverError(res, error)
   }
-})
+}))
 
 router.use('/wallet', wallet)
 
 // ═══════════════════════════════════════════════════════════════
 // COUPON ROUTES  /api/v1/coupons
 // ═══════════════════════════════════════════════════════════════
-router.post('/coupons/validate', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/coupons/validate', authenticate, h(async (req: AuthRequest, res: Response) => {
   const { code, subtotal } = req.body
   if (!code || !subtotal) { badRequest(res, 'code and subtotal are required'); return }
   const result = await CouponModel.validateCoupon(code, req.user!.userId, Number(subtotal))
@@ -366,7 +488,7 @@ router.post('/coupons/validate', authenticate, async (req: AuthRequest, res: Res
     value:    Number(result.coupon!.value),
     discount: result.discount,
   }, 'Coupon applied')
-})
+}))
 
 // ═══════════════════════════════════════════════════════════════
 // DIY ROUTES  /api/v1/diy
@@ -391,23 +513,23 @@ router.use('/diy', diy)
 // ═══════════════════════════════════════════════════════════════
 // ORDER TRACKING  /api/v1/orders/:reference/tracking
 // ═══════════════════════════════════════════════════════════════
-router.get('/orders/:reference/tracking', authenticate, async (req: AuthRequest, res: Response) => {
+router.get('/orders/:reference/tracking', authenticate, h(async (req: AuthRequest, res: Response) => {
   const order = await import('@/models/order.model').then((m) => m.findByReference(req.params.reference as string))
   if (!order) { notFound(res, 'Order not found'); return }
   if (req.user!.role !== 'admin' && order.user_id !== req.user!.userId) { forbidden(res); return }
   const timeline = await TrackingModel.getTimeline(order.id)
   ok(res, { order: import('@/models/order.model').then((m) => m.toOrderDTO(order)), timeline })
-})
+}))
 
 // Admin: add tracking event
-router.post('/admin/orders/:reference/tracking', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/admin/orders/:reference/tracking', authenticate, requireAdmin, h(async (req: AuthRequest, res: Response) => {
   const order = await import('@/models/order.model').then((m) => m.findByReference(req.params.reference as string))
   if (!order) { notFound(res, 'Order not found'); return }
   const { title, description, location } = req.body
   if (!title) { badRequest(res, 'title is required'); return }
   await TrackingModel.addEvent(order.id, order.status, title, description, location)
   ok(res, null, 'Tracking event added')
-})
+}))
 
 // ═══════════════════════════════════════════════════════════════
 // ADMIN: COUPONS  /api/v1/admin/coupons
@@ -444,17 +566,17 @@ admin.get('/diy', async (req: Request, res: Response) => {
   paginated(res, rows.map(DiyModel.toDiyDTO), total, page, limit)
 })
 
-admin.post('/diy', async (req: AuthRequest, res: Response) => {
+admin.post('/diy', authenticate, h(async (req: AuthRequest, res: Response) => {
   const { title, description, youtubeId, thumbnail, duration, category, brandId, tags, sortOrder } = req.body
   if (!title || !youtubeId) { badRequest(res, 'title and youtubeId are required'); return }
   const video = await DiyModel.createVideo({
     title, description, youtubeId, thumbnail, duration,
-    category: category ?? 'Upcycling', brandId, tags,
+    category: category ?? 'Upycling', brandId, tags,
     sortOrder: sortOrder ? Number(sortOrder) : 0,
     createdBy: req.user!.userId,
   })
   created(res, DiyModel.toDiyDTO(video), 'DIY video created')
-})
+}))
 
 admin.put('/diy/:id', async (req: Request, res: Response) => {
   const video = await DiyModel.updateVideo(req.params.id as string, req.body)

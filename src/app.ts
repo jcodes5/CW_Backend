@@ -7,10 +7,13 @@ import cookieParser from 'cookie-parser'
 import morgan from 'morgan'
 import rateLimit from 'express-rate-limit'
 import swaggerUi from 'swagger-ui-express'
+import passport from 'passport'
 import { swaggerSpec } from '@/config/swagger'
 import { errorHandler, notFoundHandler } from '@/middleware/error.middleware'
 import { httpLogStream } from '@/utils/logger'
 import routes from '@/routes'
+import '@/config/passport' // Initialize Passport strategies
+import '@/config/passport' // Initialize Passport strategies
 
 export function createApp(): Express {
   const app = express()
@@ -59,6 +62,9 @@ export function createApp(): Express {
   app.use(express.json({ limit: '2mb' }))
   app.use(express.urlencoded({ extended: true, limit: '2mb' }))
   app.use(cookieParser(process.env.COOKIE_SECRET))
+
+  // ── Passport initialization ───────────────────────────────────
+  app.use(passport.initialize())
 
   // ── HTTP logging ─────────────────────────────────────────────
   if (process.env.NODE_ENV !== 'test') {

@@ -12,6 +12,14 @@ export async function findByEmail(email: string): Promise<UserRow | null> {
   )
 }
 
+// ── Find user by OAuth provider ───────────────────────────────
+export async function findByProvider(provider: 'google' | 'facebook', providerId: string): Promise<UserRow | null> {
+  return queryOne<UserRow>(
+    'SELECT * FROM users WHERE provider = ? AND provider_id = ? AND is_active = 1 LIMIT 1',
+    [provider, providerId]
+  )
+}
+
 // ── Find user by ID ───────────────────────────────────────────
 export async function findById(id: string): Promise<UserRow | null> {
   return queryOne<UserRow>(
@@ -26,9 +34,29 @@ export async function createUser(data: RegisterBody): Promise<UserRow> {
   const passwordHash = await bcrypt.hash(data.password, parseInt(process.env.BCRYPT_ROUNDS ?? '12', 10))
 
   await execute(
-    `INSERT INTO users (id, first_name, last_name, email, phone, password_hash, role, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, 'customer', 1)`,
+    `INSERT INTO users (id, first_name, last_name, email, phone, password_hash, provider, role, is_active, is_verified)
+     VALUES (?, ?, ?, ?, ?, ?, 'local', 'customer', 1, 0)`,
     [id, data.firstName.trim(), data.lastName.trim(), data.email.toLowerCase(), data.phone ?? null, passwordHash]
+  )
+
+  return findById(id) as Promise<UserRow>
+}
+
+// ── Create OAuth user ──────────────────────────────────────────
+export async function createOAuthUser(data: {
+  firstName: string
+  lastName: string
+  email: string
+  provider: 'google' | 'facebook'
+  providerId: string
+  avatar?: string
+}): Promise<UserRow> {
+  const id = uuidv4()
+
+  await execute(
+    `INSERT INTO users (id, first_name, last_name, email, avatar, provider, provider_id, role, is_active, is_verified)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'customer', 1, 1)`,
+    [id, data.firstName.trim(), data.lastName.trim(), data.email.toLowerCase(), data.avatar ?? null, data.provider, data.providerId]
   )
 
   return findById(id) as Promise<UserRow>
@@ -36,6 +64,10 @@ export async function createUser(data: RegisterBody): Promise<UserRow> {
 
 // ── Verify password ───────────────────────────────────────────
 export async function verifyPassword(user: UserRow, password: string): Promise<boolean> {
+  // OAuth users don't have passwords
+  if (user.provider !== 'local' || !user.password_hash) {
+    return false
+  }
   return bcrypt.compare(password, user.password_hash)
 }
 
@@ -172,6 +204,7 @@ export function toUserDTO(row: UserRow) {
     role:       row.role,
     isVerified: row.is_verified === 1,
     isActive:   row.is_active === 1,
+    provider:   row.provider,
     createdAt:  row.created_at,
   }
 }

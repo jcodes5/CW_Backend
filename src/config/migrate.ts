@@ -53,11 +53,13 @@ const MIGRATIONS: string[] = [
     last_name     VARCHAR(100)  NOT NULL,
     email         VARCHAR(255)  NOT NULL UNIQUE,
     phone         VARCHAR(20)   NULL,
-    password_hash VARCHAR(255)  NOT NULL,
+    password_hash VARCHAR(255)  NULL,
     avatar        VARCHAR(500)  NULL,
     role          ENUM('customer','admin','vendor') NOT NULL DEFAULT 'customer',
     is_verified   TINYINT(1)    NOT NULL DEFAULT 0,
     is_active     TINYINT(1)    NOT NULL DEFAULT 1,
+    provider      ENUM('local','google','facebook') NOT NULL DEFAULT 'local',
+    provider_id   VARCHAR(255)  NULL,
     reset_token   VARCHAR(255)  NULL,
     reset_token_expires DATETIME NULL,
     verify_token  VARCHAR(255)  NULL,
@@ -67,7 +69,9 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (id),
     INDEX idx_email (email),
     INDEX idx_role (role),
-    INDEX idx_active (is_active)
+    INDEX idx_active (is_active),
+    INDEX idx_provider (provider),
+    INDEX idx_provider_id (provider_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
   // ── Refresh Tokens ────────────────────────────────────────

@@ -265,6 +265,16 @@ export async function getBalance(userId: string): Promise<number> {
   return wallet?.balance ?? 0
 }
 
+/**
+ * Get transaction by reference (for duplicate checking)
+ */
+export async function getTransactionByReference(reference: string): Promise<WalletTransactionRow | null> {
+  return queryOne<WalletTransactionRow>(
+    'SELECT * FROM wallet_transactions WHERE reference = ? LIMIT 1',
+    [reference]
+  )
+}
+
 // ── Mappers ──────────────────────────────────────────────────────
 
 export function toWalletDTO(row: WalletRow): WalletDTO {

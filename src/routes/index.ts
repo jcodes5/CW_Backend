@@ -138,6 +138,19 @@ products.post('/:slug/reviews', authenticate, reviewValidators, validate, h(prod
 router.use('/products', products)
 
 // ═══════════════════════════════════════════════════════════════
+// HERO IMAGES ROUTES  /api/v1/hero-images (public)
+// ═══════════════════════════════════════════════════════════════
+const heroImages = Router()
+
+heroImages.get('/', h(async (_req: Request, res: Response) => {
+  const HeroModel = await import('@/models/hero.model').then(m => m)
+  const images = await HeroModel.getAllHeroImages()
+  ok(res, images)
+}))
+
+router.use('/hero-images', heroImages)
+
+// ═══════════════════════════════════════════════════════════════
 // ORDER ROUTES  /api/v1/orders
 // ═══════════════════════════════════════════════════════════════
 const orders = Router()
@@ -223,6 +236,14 @@ admin.get   ('/users',                 h(adminController.listUsers))
 admin.get   ('/reviews',               h(adminController.listReviews))
 admin.patch ('/reviews/:reviewId/verify', adminReviewValidators, validate, h(adminController.updateReviewVerification))
 admin.delete('/reviews/:reviewId',      h(adminController.deleteReview))
+
+// Hero Images
+admin.get   ('/hero-images',                h(adminController.listHeroImages))
+admin.get   ('/hero-images/:id',           h(adminController.getHeroImageById))
+admin.post  ('/hero-images',               upload.single('image'), h(adminController.createHeroImage))
+admin.put   ('/hero-images/:id',           upload.single('image'), h(adminController.updateHeroImage))
+admin.delete('/hero-images/:id',           h(adminController.deleteHeroImage))
+admin.post  ('/hero-images/reorder',       h(adminController.reorderHeroImages))
 
 router.use('/admin', admin)
 

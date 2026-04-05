@@ -392,6 +392,23 @@ const MIGRATIONS: string[] = [
     INDEX idx_type (type),
     INDEX idx_created (created_at)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+  // ── Hero Images (Shop Page Carousel) ───────────────────────────
+  `CREATE TABLE IF NOT EXISTS hero_images (
+    id        CHAR(36)      NOT NULL,
+    image_url VARCHAR(500)  NOT NULL,
+    title     VARCHAR(255)  NOT NULL,
+    subtitle  VARCHAR(500)  NOT NULL,
+    tag       VARCHAR(100)  NOT NULL,
+    alt_text  VARCHAR(255)  NOT NULL,
+    sort_order INT          NOT NULL DEFAULT 0,
+    is_active TINYINT(1)    NOT NULL DEFAULT 1,
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    INDEX idx_active (is_active),
+    INDEX idx_sort (sort_order)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 ]
 
 async function migrate() {

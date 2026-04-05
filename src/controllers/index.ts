@@ -1668,4 +1668,110 @@ export const adminController = {
 
     ok(res, null, 'Review deleted')
   },
+
+  // ── Admin Hero Image Management ──────────────────────────
+  async listHeroImages(_req: Request, res: Response): Promise<void> {
+    const HeroModel = await import('@/models/hero.model').then(m => m)
+    const images = await HeroModel.getAllHeroImages()
+    ok(res, images)
+  },
+
+  async getHeroImageById(req: Request, res: Response): Promise<void> {
+    const HeroModel = await import('@/models/hero.model').then(m => m)
+    const image = await HeroModel.getHeroImageById(req.params.id as string)
+    if (!image) { notFound(res, 'Hero image not found'); return }
+    ok(res, image)
+  },
+
+  async createHeroImage(req: Request, res: Response): Promise<void> {
+    const { title, subtitle, tag, alt_text, sort_order } = req.body
+
+    if (!title || !subtitle || !tag || !alt_text) {
+      badRequest(res, 'Missing required fields: title, subtitle, tag, alt_text')
+      return
+    }
+
+    // Handle file upload if present
+    let imageUrl = req.body.image_url || ''
+    if (req.file) {
+      try {
+        const uploadResult = await cloudinaryService.uploadBuffer(
+          req.file.buffer,
+          'hero_images'
+        )
+        imageUrl = uploadResult.url
+      } catch (error) {
+        logger.error('Cloudinary upload failed:', error)
+        badRequest(res, 'Image upload failed')
+        return
+      }
+    } else if (!imageUrl) {
+      badRequest(res, 'Either an image file or image_url is required')
+      return
+    }
+
+    const HeroModel = await import('@/models/hero.model').then(m => m)
+    const image = await HeroModel.createHeroImage({
+      image_url: imageUrl, title, subtitle, tag, alt_text, sort_order,
+    })
+    created(res, image, 'Hero image created')
+  },
+
+  async updateHeroImage(req: Request, res: Response): Promise<void> {
+    const id = req.params.id as string
+    const { title, subtitle, tag, alt_text, sort_order, is_active } = req.body
+
+    // Get the existing hero image to preserve the image URL if no new file is uploaded
+    const HeroModel = await import('@/models/hero.model').then(m => m)
+    const existingImage = await HeroModel.getHeroImageById(id)
+    if (!existingImage) { 
+      notFound(res, 'Hero image not found')
+      return
+    }
+
+    // Handle file upload if present
+    let imageUrl = existingImage.image_url
+    if (req.file) {
+      try {
+        const uploadResult = await cloudinaryService.uploadBuffer(
+          req.file.buffer,
+          'hero_images'
+        )
+        imageUrl = uploadResult.url
+      } catch (error) {
+        logger.error('Cloudinary upload failed:', error)
+        badRequest(res, 'Image upload failed')
+        return
+      }
+    } else if (req.body.image_url) {
+      // If no file uploaded but image_url is provided, use it
+      imageUrl = req.body.image_url
+    }
+
+    const image = await HeroModel.updateHeroImage(id, {
+      image_url: imageUrl,
+      title, subtitle, tag, alt_text, sort_order, is_active
+    })
+    ok(res, image, 'Hero image updated')
+  },
+
+  async deleteHeroImage(req: Request, res: Response): Promise<void> {
+    const HeroModel = await import('@/models/hero.model').then(m => m)
+    const id = req.params.id as string
+    
+    await HeroModel.deleteHeroImage(id)
+    ok(res, null, 'Hero image deleted')
+  },
+
+  async reorderHeroImages(req: Request, res: Response): Promise<void> {
+    const { order } = req.body
+    if (!order || typeof order !== 'object') {
+      badRequest(res, 'Invalid order data')
+      return
+    }
+
+    const HeroModel = await import('@/models/hero.model').then(m => m)
+    await HeroModel.reorderHeroImages(order)
+    ok(res, null, 'Hero images reordered')
+  },
 }

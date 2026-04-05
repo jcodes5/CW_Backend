@@ -125,6 +125,11 @@ export const reviewValidators = [
   body('title').optional().trim().isLength({ max: 200 }).withMessage('Title too long'),
 ]
 
+// ── Admin review validators ───────────────────────────────────
+export const adminReviewValidators = [
+  body('isVerified').optional().isBoolean().withMessage('isVerified must be a boolean'),
+]
+
 // ── Newsletter validator ──────────────────────────────────────
 export const newsletterValidators = [
   body('email').trim().normalizeEmail().isEmail().withMessage('Valid email is required'),

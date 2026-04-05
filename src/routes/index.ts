@@ -14,7 +14,7 @@ import {
   resetPasswordValidators, changePasswordValidators,
   productQueryValidators, createProductValidators,
   createOrderValidators, addressValidators, reviewValidators,
-  newsletterValidators,
+  adminReviewValidators, newsletterValidators,
 } from '@/middleware/validate.middleware'
 import type { AuthRequest } from '@/types'
 
@@ -218,6 +218,11 @@ admin.patch ('/orders/:reference/status', h(adminController.updateOrderStatus))
 
 // Users
 admin.get   ('/users',                 h(adminController.listUsers))
+
+// Reviews
+admin.get   ('/reviews',               h(adminController.listReviews))
+admin.patch ('/reviews/:reviewId/verify', adminReviewValidators, validate, h(adminController.updateReviewVerification))
+admin.delete('/reviews/:reviewId',      h(adminController.deleteReview))
 
 router.use('/admin', admin)
 

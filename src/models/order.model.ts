@@ -12,6 +12,7 @@ export interface CreateOrderData {
   shippingAddress: Record<string, unknown>
   notes?:  string
   couponCode?: string
+  deductStock?: boolean
 }
 
 export interface OrderWithItems extends OrderRow {
@@ -20,6 +21,7 @@ export interface OrderWithItems extends OrderRow {
 
 // ── Create order (transactional) ──────────────────────────────
 export async function createOrder(data: CreateOrderData): Promise<OrderRow> {
+  const deductStock = data.deductStock !== false // default to true for backward compatibility
   return withTransaction(async (conn) => {
     const orderId   = uuidv4()
     const reference = generateOrderReference()
@@ -37,7 +39,7 @@ export async function createOrder(data: CreateOrderData): Promise<OrderRow> {
          FROM products p
          JOIN categories c ON c.id = p.category_id
          JOIN brands b ON b.id = p.brand_id
-         WHERE p.id = ? AND p.is_active = 1 FOR UPDATE`,
+         WHERE p.id = ? AND p.is_active = 1${deductStock ? ' FOR UPDATE' : ''}`,
         [item.productId]
       ) as [import('@/types').ProductRow[], unknown]
 
@@ -47,11 +49,13 @@ export async function createOrder(data: CreateOrderData): Promise<OrderRow> {
         throw new Error(`Insufficient stock for: ${product.name}`)
       }
 
-      // Decrement stock
-      await conn.execute(
-        'UPDATE products SET stock = stock - ? WHERE id = ?',
-        [item.quantity, item.productId]
-      )
+      if (deductStock) {
+        // Decrement stock
+        await conn.execute(
+          'UPDATE products SET stock = stock - ? WHERE id = ?',
+          [item.quantity, item.productId]
+        )
+      }
 
       const unitPrice = Number(product.price)
       subtotal += unitPrice * item.quantity
@@ -227,6 +231,25 @@ export async function confirmPayment(
   if (order) {
     await RewardsModel.awardOrderPoints(order.user_id, orderId, Number(order.total)).catch(() => {})
   }
+}
+
+// ── Deduct stock for order items ──────────────────────────────
+export async function deductStockForOrder(orderId: string): Promise<void> {
+  return withTransaction(async (conn) => {
+    // Get order items
+    const [itemRows] = await conn.execute(
+      'SELECT product_id, quantity FROM order_items WHERE order_id = ?',
+      [orderId]
+    ) as [Array<{ product_id: string; quantity: number }>, unknown]
+
+    // Deduct stock for each item
+    for (const item of itemRows) {
+      await conn.execute(
+        'UPDATE products SET stock = stock - ? WHERE id = ?',
+        [item.quantity, item.product_id]
+      )
+    }
+  })
 }
 
 // ── Cancel order ──────────────────────────────────────────────

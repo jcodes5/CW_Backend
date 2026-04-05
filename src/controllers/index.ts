@@ -389,6 +389,20 @@ export const productController = {
     )
     if (existing) { conflict(res, 'You have already reviewed this product'); return }
 
+    // Verify user has purchased this product (order must be confirmed/delivered)
+    const hasPurchased = await queryOne(
+      `SELECT oi.id FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       WHERE oi.product_id = ? AND o.user_id = ?
+       AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
+       LIMIT 1`,
+      [product.id, userId]
+    )
+    if (!hasPurchased) {
+      forbidden(res, 'You must purchase this product to review it')
+      return
+    }
+
     const id = uuidv4()
     await execute(
       `INSERT INTO product_reviews (id, product_id, user_id, rating, title, body)
@@ -529,12 +543,15 @@ export const paymentController = {
 
     try {
       // 1. Create order - backend calculates amounts
+      // For Paystack, don't deduct stock yet - wait for payment confirmation
+      const deductStock = paymentMethod === 'wallet'
       const order = await OrderModel.createOrder({
         userId,
         items,
         shippingAddress,
         notes,
         couponCode,
+        deductStock,
       })
 
       // 2. Get user for email
@@ -704,6 +721,11 @@ export const paymentController = {
     // Confirm the order
     await OrderModel.confirmPayment(order.id, paymentRef, paymentResult.channel ?? 'unknown')
 
+    // Deduct stock for Paystack orders (wallet orders already had stock deducted)
+    if (order.payment_method !== 'wallet') {
+      await OrderModel.deductStockForOrder(order.id)
+    }
+
     // Send confirmation email async
     const orderWithItems = await OrderModel.getOrderWithItems(order.reference)
     const user = await AuthModel.findById(order.user_id)
@@ -731,7 +753,59 @@ export const paymentController = {
       orderId: order.id, reference: order.reference, total: order.total,
     })
 
-    ok(res, { reference: order.reference, status: 'confirmed' }, 'Payment verified successfully')
+    // Get the full order with items
+    const fullOrderWithItems = await OrderModel.getOrderWithItems(order.reference)
+    if (!fullOrderWithItems) {
+      notFound(res, 'Order not found after confirmation')
+      return
+    }
+
+    // Get customer info from user
+    const orderUser = await AuthModel.findById(order.user_id)
+    if (!orderUser) {
+      notFound(res, 'User not found')
+      return
+    }
+
+    // Parse shipping address
+    let shippingAddress: Record<string, unknown> = {}
+    try { shippingAddress = JSON.parse(order.shipping_address) } catch { /**/ }
+
+    // Build full order response
+    const fullOrder = {
+      id: order.id,
+      reference: order.reference,
+      status: order.status,
+      items: fullOrderWithItems.items.map(item => ({
+        ...item,
+        product: item.product,
+      })),
+      shippingAddress,
+      pricing: {
+        subtotal: Number(order.subtotal),
+        deliveryFee: Number(order.delivery_fee),
+        discount: Number(order.discount),
+        total: Number(order.total),
+      },
+      paymentMethod: order.payment_method,
+      paymentChannel: order.payment_channel ?? undefined,
+      customer: {
+        firstName: orderUser.first_name,
+        lastName: orderUser.last_name,
+        email: orderUser.email,
+        phone: shippingAddress.phone as string || '',
+      },
+      notes: order.notes ?? undefined,
+      createdAt: order.created_at,
+      updatedAt: order.updated_at,
+      estimatedDelivery: order.estimated_delivery ?? undefined,
+    }
+
+    ok(res, {
+      reference: order.reference,
+      status: 'confirmed',
+      order: fullOrder
+    }, 'Payment verified successfully')
   },
 
   /**
@@ -1515,5 +1589,83 @@ export const adminController = {
       query<{ total: number }>('SELECT COUNT(*) AS total FROM users'),
     ])
     paginated(res, rows, count[0]?.total ?? 0, page, limit)
+  },
+
+  // Admin review management
+  async listReviews(req: Request, res: Response): Promise<void> {
+    const { page, limit } = getPagination(req.query.page, req.query.limit, 20)
+    const { productId, isVerified } = req.query
+    const offset = (page - 1) * limit
+
+    let whereClause = '1=1'
+    const params: unknown[] = []
+
+    if (productId) {
+      whereClause += ' AND r.product_id = ?'
+      params.push(productId as string)
+    }
+
+    if (isVerified === 'true') {
+      whereClause += ' AND r.is_verified = 1'
+    } else if (isVerified === 'false') {
+      whereClause += ' AND r.is_verified = 0'
+    }
+
+    const [rows, count] = await Promise.all([
+      query(
+        `SELECT r.*, u.first_name, u.last_name, u.email, p.name AS product_name, p.slug
+         FROM product_reviews r
+         JOIN users u ON u.id = r.user_id
+         JOIN products p ON p.id = r.product_id
+         WHERE ${whereClause}
+         ORDER BY r.created_at DESC LIMIT ? OFFSET ?`,
+        [...params, limit, offset]
+      ),
+      query<{ total: number }>(
+        `SELECT COUNT(*) AS total FROM product_reviews r
+         WHERE ${whereClause}`,
+        params
+      ),
+    ])
+
+    paginated(res, rows, count[0]?.total ?? 0, page, limit)
+  },
+
+  async updateReviewVerification(req: AuthRequest, res: Response): Promise<void> {
+    const { reviewId } = req.params
+    const { isVerified } = req.body
+
+    const review = await queryOne(
+      'SELECT * FROM product_reviews WHERE id = ?',
+      [reviewId as string]
+    )
+    if (!review) { notFound(res, 'Review not found'); return }
+
+    await execute(
+      'UPDATE product_reviews SET is_verified = ? WHERE id = ?',
+      [isVerified ? 1 : 0, reviewId as string]
+    )
+
+    ok(res, null, `Review marked as ${isVerified ? 'verified' : 'unverified'}`)
+  },
+
+  async deleteReview(req: AuthRequest, res: Response): Promise<void> {
+    const { reviewId } = req.params
+
+    const review = await queryOne<{ product_id: string }>(
+      'SELECT product_id FROM product_reviews WHERE id = ?',
+      [reviewId as string]
+    )
+    if (!review) { notFound(res, 'Review not found'); return }
+
+    await execute(
+      'DELETE FROM product_reviews WHERE id = ?',
+      [reviewId as string]
+    )
+
+    // Recalculate product rating after deletion
+    await ProductModel.recalculateRating(review.product_id)
+
+    ok(res, null, 'Review deleted')
   },
 }

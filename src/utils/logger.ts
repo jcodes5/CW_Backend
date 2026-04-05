@@ -3,8 +3,16 @@ import path from 'path'
 
 const { combine, timestamp, errors, json, colorize, printf } = winston.format
 
+const safeStringify = (obj: any) => {
+  try {
+    return JSON.stringify(obj, null, 2)
+  } catch {
+    return '[Circular Object]'
+  }
+}
+
 const devFormat = printf(({ level, message, timestamp: ts, stack, ...meta }) => {
-  const metaStr = Object.keys(meta).length ? `\n${JSON.stringify(meta, null, 2)}` : ''
+  const metaStr = Object.keys(meta).length ? `\n${safeStringify(meta)}` : ''
   return `${ts} [${level}]: ${stack ?? message}${metaStr}`
 })
 

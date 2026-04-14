@@ -86,7 +86,7 @@ export const authController = {
   },
 
   async login(req: Request, res: Response): Promise<void> {
-    const { email, password } = req.body
+    const { email, password, rememberMe } = req.body
 
     const user = await AuthModel.findByEmail(email)
     if (!user) { unauthorized(res, 'Invalid email or password'); return }
@@ -96,15 +96,17 @@ export const authController = {
 
     if (!user.is_active) { forbidden(res, 'Account has been deactivated'); return }
 
-    const tokens = generateTokenPair({ userId: user.id, email: user.email, role: user.role })
+    const refreshExpires = rememberMe ? '30d' : undefined
+    const tokens = generateTokenPair({ userId: user.id, email: user.email, role: user.role }, refreshExpires)
     await AuthModel.storeRefreshToken(user.id, tokens.refreshToken)
     await AuthModel.updateLastLogin(user.id)
 
+    const cookieMaxAge = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
       secure:   process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge:   7 * 24 * 60 * 60 * 1000,
+      maxAge: cookieMaxAge,
     })
 
     ok(res, {
@@ -645,12 +647,21 @@ export const paymentController = {
   },
 
   /**
-   * Verify payment - called from frontend callback
+   * Verify payment - POLLING ENDPOINT (read-only)
+   * 
+   * NO LONGER a source of truth. Webhook is the authority.
+   * Frontend uses this to poll for webhook confirmation.
+   * 
+   * FLOW:
+   * 1. Frontend polls this endpoint repeatedly
+   * 2. Endpoint returns current order status from DB
+   * 3. When webhook processes, status changes to 'confirmed'
+   * 4. Frontend detects status change and stops polling
    * 
    * SECURITY:
-   * - Validates amount matches order total
-   * - Validates email matches
-   * - Only marks successful if status = 'success'
+   * - Only returns info about caller's own orders
+   * - No state mutations (read-only)
+   * - Tolerant of any payment method
    */
   async verify(req: AuthRequest, res: Response): Promise<void> {
     const { reference } = req.body
@@ -663,159 +674,102 @@ export const paymentController = {
     const order = await OrderModel.findByReference(paymentRef)
     if (!order) { notFound(res, 'Order not found for this payment reference'); return }
 
-    // Verify with Paystack
-    let paymentResult: Awaited<ReturnType<typeof paymentService.verifyPayment>>
-    try {
-      paymentResult = await paymentService.verifyPayment(paymentRef)
-    } catch (err) {
-      logger.error('Payment verification error:', err)
-      serverError(res, 'Payment verification failed — please contact support')
+    // SECURITY: Verify this user owns this order
+    if (order.user_id !== req.user?.userId) {
+      forbidden(res, 'You do not have access to this order')
       return
     }
 
-    // SECURITY: Validate payment status is 'success'
-    if (!paymentResult.success) {
-      await OrderModel.updateStatus(order.id, 'payment_failed', 
-        `Payment not successful: ${paymentResult.status}`)
-      badRequest(res, 'Payment was not successful')
-      return
-    }
-
-    // SECURITY: Validate amount matches (in naira)
-    const expectedAmount = Number(order.total)
-    if (paymentResult.amount !== expectedAmount) {
-      logger.error(`Amount mismatch for ${paymentRef}: expected ${expectedAmount}, got ${paymentResult.amount}`)
-      await OrderModel.updateStatus(order.id, 'payment_failed', 'Amount mismatch')
-      badRequest(res, 'Payment amount mismatch — please contact support')
-      return
-    }
-
-    // SECURITY: Validate email matches (if available)
-    if (paymentResult.email) {
-      const customerEmail = paymentResult.email.toLowerCase()
-      let orderEmail = ''
-      try {
-        const addr = JSON.parse(order.shipping_address)
-        orderEmail = (addr.email as string)?.toLowerCase() ?? ''
-      } catch { /**/ }
-      
-      if (!orderEmail) {
-        const user = await AuthModel.findById(order.user_id)
-        orderEmail = user?.email.toLowerCase() ?? ''
-      }
-
-      if (customerEmail !== orderEmail) {
-        logger.error(`Email mismatch for ${paymentRef}: expected ${orderEmail}, got ${customerEmail}`)
-        await OrderModel.updateStatus(order.id, 'payment_failed', 'Email mismatch')
-        badRequest(res, 'Payment email mismatch — please contact support')
-        return
-      }
-    }
-
-    // IDEMPOTENCY: Check if already confirmed
-    if (order.status === 'confirmed') {
-      ok(res, { reference: order.reference, status: 'already_confirmed' }, 'Order already confirmed')
-      return
-    }
-
-    // Confirm the order
-    await OrderModel.confirmPayment(order.id, paymentRef, paymentResult.channel ?? 'unknown')
-
-    // Deduct stock for Paystack orders (wallet orders already had stock deducted)
-    if (order.payment_method !== 'wallet') {
-      await OrderModel.deductStockForOrder(order.id)
-    }
-
-    // Send confirmation email async
-    const orderWithItems = await OrderModel.getOrderWithItems(order.reference)
-    const user = await AuthModel.findById(order.user_id)
-    if (user && orderWithItems) {
-      const emailItems = orderWithItems.items.map((i) => ({
-        name:     i.product.name,
-        quantity: i.quantity,
-        price:    i.product.price,
-      }))
-      sendOrderConfirmationEmail(
-        user.email, user.first_name,
-        order.reference, emailItems,
-        Number(order.total), Number(order.delivery_fee),
-        (() => {
-          try {
-            const addr = JSON.parse(order.shipping_address)
-            return [addr.address_line1, addr.city, addr.state, addr.country].filter(Boolean).join(', ')
-          } catch { return '' }
-        })()
-      ).catch(() => {})
-    }
-
-    // Emit socket event for admin dashboard
-    req.app.get('io')?.emit('order:confirmed', {
-      orderId: order.id, reference: order.reference, total: order.total,
-    })
-
-    // Get the full order with items
-    const fullOrderWithItems = await OrderModel.getOrderWithItems(order.reference)
-    if (!fullOrderWithItems) {
-      notFound(res, 'Order not found after confirmation')
-      return
-    }
-
-    // Get customer info from user
-    const orderUser = await AuthModel.findById(order.user_id)
-    if (!orderUser) {
-      notFound(res, 'User not found')
-      return
-    }
-
-    // Parse shipping address
-    let shippingAddress: Record<string, unknown> = {}
-    try { shippingAddress = JSON.parse(order.shipping_address) } catch { /**/ }
-
-    // Build full order response
-    const fullOrder = {
-      id: order.id,
-      reference: order.reference,
-      status: order.status,
-      items: fullOrderWithItems.items.map(item => ({
-        ...item,
-        product: item.product,
-      })),
-      shippingAddress,
-      pricing: {
-        subtotal: Number(order.subtotal),
-        deliveryFee: Number(order.delivery_fee),
-        discount: Number(order.discount),
-        total: Number(order.total),
-      },
-      paymentMethod: order.payment_method,
-      paymentChannel: order.payment_channel ?? undefined,
-      customer: {
-        firstName: orderUser.first_name,
-        lastName: orderUser.last_name,
-        email: orderUser.email,
-        phone: shippingAddress.phone as string || '',
-      },
-      notes: order.notes ?? undefined,
-      createdAt: order.created_at,
-      updatedAt: order.updated_at,
-      estimatedDelivery: order.estimated_delivery ?? undefined,
-    }
+    // Just return current status (webhook is the source of truth)
+    const fullOrderWithItems = await OrderModel.getOrderWithItems(paymentRef)
+    
+    // Response indicates current state
+    const isConfirmed = order.status === 'confirmed'
+    const isPending = order.status === 'payment_pending'
 
     ok(res, {
       reference: order.reference,
-      status: 'confirmed',
-      order: fullOrder
-    }, 'Payment verified successfully')
+      status: order.status,
+      paymentConfirmed: isConfirmed,
+      webhookProcessed: !!order.webhook_processed_at,
+      webhookEventId: order.webhook_event_id ?? undefined,
+      order: fullOrderWithItems ? OrderModel.toOrderDTO(fullOrderWithItems) : OrderModel.toOrderDTO(order),
+    }, 
+    isConfirmed ? 'Payment confirmed' :
+    isPending ? 'Payment pending - webhook processing' :
+    'Payment status: ' + order.status
+    )
   },
 
   /**
-   * Webhook - source of truth for payment status
+   * Admin: Manually confirm payment
+   * 
+   * ADMIN ONLY - Use for:
+   * - Failed webhook retries
+   * - Manual verification scenarios
+   * - Override suspicious transactions
+   */
+  async adminConfirmPayment(req: AuthRequest, res: Response): Promise<void> {
+    const { reference, channel, notes } = req.body
+    
+    if (!reference) {
+      badRequest(res, 'Payment reference is required')
+      return
+    }
+
+    try {
+      const { manuallyConfirmPayment } = await import('@/services/payment-retry.service')
+      const result = await manuallyConfirmPayment(reference, channel || 'manual_override', notes)
+
+      if (result.success) {
+        logger.info(`Admin manually confirmed payment: ${reference}`)
+        ok(res, result.order, result.message)
+      } else {
+        badRequest(res, result.message)
+      }
+    } catch (err) {
+      logger.error('Admin payment confirmation error:', err)
+      serverError(res, `Error: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  },
+
+  /**
+   * Admin: Get payment diagnostics
+   * 
+   * Returns detailed payment information for debugging
+   */
+  async adminGetDiagnostics(req: AuthRequest, res: Response): Promise<void> {
+    const { reference } = req.params
+    
+    // Ensure reference is a string, not an array
+    const referenceStr = Array.isArray(reference) ? reference[0] : reference
+
+    try {
+      const { getPaymentDiagnostics } = await import('@/services/payment-retry.service')
+      const diagnostics = await getPaymentDiagnostics(referenceStr)
+      ok(res, diagnostics, 'Diagnostics retrieved')
+    } catch (err) {
+      notFound(res, err instanceof Error ? err.message : 'Diagnostics not found')
+    }
+  },
+
+  /**
+   * Webhook - SOURCE OF TRUTH for payment status
+   * 
+   * CRITICAL: This endpoint is the authoritative source of truth.
+   * Even if frontend fails, payment still gets confirmed here.
    * 
    * SECURITY:
-   * - Validates webhook signature
-   * - Idempotent - ignores duplicate events
+   * - Validates webhook signature (cryptographic proof from Paystack)
+   * - Idempotent: uses webhook_event_id to prevent duplicates
    * - Validates amount and email server-side
    * - Works even if user closes browser
+   * 
+   * FLOW:
+   * 1. Paystack sends webhook event
+   * 2. We validate signature + webhook event_id uniqueness
+   * 3. Order confirmed regardless of frontend state
+   * 4. Socket.io notifies frontend in real-time
    */
   async webhook(req: Request, res: Response): Promise<void> {
     const webhookHeaderName = 'x-paystack-signature'
@@ -825,7 +779,7 @@ export const paymentController = {
     // SECURITY: Validate webhook signature (Paystack)
     const isValid = paystackService.validateWebhookSignature(rawBody, signature)
     if (!isValid) {
-      logger.warn('Invalid Paystack webhook signature')
+      logger.warn('Invalid Paystack webhook signature - rejecting webhook')
       res.status(401).json({ message: 'Invalid signature' })
       return
     }
@@ -833,18 +787,21 @@ export const paymentController = {
     let event: PaystackWebhookEvent
     try {
       event = JSON.parse(rawBody.toString()) as PaystackWebhookEvent
-    } catch {
-      logger.error('Failed to parse webhook payload')
+    } catch (err) {
+      logger.error('Failed to parse webhook payload:', err)
       res.status(400).json({ message: 'Invalid payload' })
       return
     }
 
-    const { reference, amount, status, channel, customer, metadata } = event.data
+    const { reference, amount, status, channel, customer, metadata, id: eventId } = event.data
     const paymentRef = reference.split(':').pop() ?? reference
+    const webhookEventId = (eventId ?? '').toString() // Paystack event ID for dedup
 
-    logger.info(`Webhook received: ${event.event} for ${paymentRef}, status: ${status}`)
+    logger.info(`Webhook received: ${event.event} | ref: ${paymentRef} | status: ${status} | eventId: ${webhookEventId}`)
 
-    // Handle wallet deposit (starts with WALLET-)
+    // ─────────────────────────────────────────────────────────────
+    // Handle wallet deposit (prefix: WALLET-)
+    // ─────────────────────────────────────────────────────────────
     if (paymentRef.startsWith('WALLET-')) {
       if (event.event === 'charge.success') {
         const walletMetadata = metadata as { userId?: string } | undefined
@@ -857,54 +814,59 @@ export const paymentController = {
             'Wallet deposit via Paystack webhook',
             { paystack_data: event.data }
           )
-          logger.info(`Wallet deposit confirmed: ${paymentRef}, amount: ${amountInNaira} Naira`)
+          logger.info(`✓ Wallet deposit confirmed: ${paymentRef} | amount: ${amountInNaira} Naira`)
         }
       }
-      res.status(200).json({ received: true })
+      res.status(200).json({ received: true, message: 'Wallet transaction processed' })
       return
     }
 
-    // Handle charge.success event
+    // ─────────────────────────────────────────────────────────────
+    // Handle order payment (charge.success event)
+    // ─────────────────────────────────────────────────────────────
     if (event.event === 'charge.success') {
-      // IDEMPOTENCY: Find order by reference
+      // 1. Find order by reference
       const order = await OrderModel.findByReference(paymentRef)
-      
       if (!order) {
         logger.warn(`Order not found for reference: ${paymentRef}`)
-        res.status(200).json({ received: true, message: 'Order not found - ignoring' })
+        // Respond 200 to Paystack (don't retry), but we can't process
+        res.status(200).json({ received: true, message: 'Order not found' })
         return
       }
 
-      // IDEMPOTENCY: Check if already confirmed
+      // 2. DEDUPLICATION: Check if we already processed this webhook event
+      if (webhookEventId && order.webhook_event_id === webhookEventId) {
+        logger.info(`✓ Duplicate webhook event ${webhookEventId} for ${paymentRef} - ignoring`)
+        res.status(200).json({ received: true, message: 'Duplicate event - already processed' })
+        return
+      }
+
+      // 3. IDEMPOTENCY: Check if order already confirmed (fail-safe)
       if (order.status === 'confirmed') {
-        logger.info(`Order ${paymentRef} already confirmed - ignoring duplicate webhook`)
-        res.status(200).json({ received: true, message: 'Already processed' })
+        logger.info(`✓ Order ${paymentRef} already confirmed (status=confirmed) - idempotent response`)
+        res.status(200).json({ received: true, message: 'Already confirmed - idempotent' })
         return
       }
 
-      // IDEMPOTENCY: Check if this reference was already used
-      if (order.paystack_ref && order.paystack_ref === paymentRef) {
-        logger.info(`Reference ${paymentRef} already processed - ignoring`)
-        res.status(200).json({ received: true, message: 'Duplicate reference - ignoring' })
-        return
-      }
-
-      // SECURITY: Validate amount matches (in kobo)
+      // 4. SECURITY: Validate amount matches (in kobo)
       const expectedAmountKobo = Math.round(Number(order.total) * 100)
       if (amount !== expectedAmountKobo) {
-        logger.error(`Webhook amount mismatch for ${paymentRef}: expected ${expectedAmountKobo}, got ${amount}`)
-        await OrderModel.updateStatus(order.id, 'payment_failed', 'Amount mismatch in webhook')
-        res.status(200).json({ received: true, message: 'Amount mismatch - order marked failed' })
+        logger.error(`SECURITY: Amount mismatch for ${paymentRef}`)
+        logger.error(`  Expected: ${expectedAmountKobo} kobo (${expectedAmountKobo / 100} Naira)`)
+        logger.error(`  Received: ${amount} kobo (${amount / 100} Naira)`)
+        await OrderModel.updateStatus(order.id, 'payment_failed', 
+          `Webhook amount mismatch: expected ${expectedAmountKobo}, got ${amount}`)
+        res.status(200).json({ received: true, message: 'Amount mismatch detected' })
         return
       }
 
-      // SECURITY: Validate email matches
+      // 5. SECURITY: Validate email matches
       let orderEmail = ''
       try {
         const addr = JSON.parse(order.shipping_address)
         orderEmail = (addr.email as string)?.toLowerCase() ?? ''
       } catch { /**/ }
-      
+
       if (!orderEmail) {
         const user = await AuthModel.findById(order.user_id)
         orderEmail = user?.email.toLowerCase() ?? ''
@@ -912,56 +874,98 @@ export const paymentController = {
 
       const customerEmail = customer?.email?.toLowerCase()
       if (customerEmail && customerEmail !== orderEmail) {
-        logger.error(`Webhook email mismatch for ${paymentRef}: expected ${orderEmail}, got ${customerEmail}`)
-        await OrderModel.updateStatus(order.id, 'payment_failed', 'Email mismatch in webhook')
-        res.status(200).json({ received: true, message: 'Email mismatch - order marked failed' })
+        logger.error(`SECURITY: Email mismatch for ${paymentRef}`)
+        logger.error(`  Expected: ${orderEmail}`)
+        logger.error(`  Received: ${customerEmail}`)
+        await OrderModel.updateStatus(order.id, 'payment_failed', 
+          `Webhook email mismatch: expected ${orderEmail}, got ${customerEmail}`)
+        res.status(200).json({ received: true, message: 'Email mismatch detected' })
         return
       }
 
-      // Confirm payment
-      await OrderModel.confirmPayment(order.id, paymentRef, channel)
-      
-      logger.info(`Payment confirmed for order ${paymentRef} via webhook`)
+      // 6. PROCESS: Confirm payment (source of truth)
+      try {
+        await OrderModel.confirmPayment(order.id, paymentRef, channel)
+        
+        // Store webhook event ID and processed timestamp for traceability
+        await execute(
+          'UPDATE orders SET webhook_event_id = ?, webhook_processed_at = ? WHERE id = ?',
+          [webhookEventId || null, new Date(), order.id]
+        )
 
-      // Emit socket event
-      req.app.get('io')?.emit('order:confirmed', { 
-        orderId: order.id, 
-        reference: paymentRef 
-      })
+        logger.info(`✓ Payment CONFIRMED via webhook for order ${paymentRef}`)
 
-      // Send confirmation email async
-      const orderWithItems = await OrderModel.getOrderWithItems(order.reference)
-      const user = await AuthModel.findById(order.user_id)
-      if (user && orderWithItems) {
-        const emailItems = orderWithItems.items.map((i) => ({
-          name:     i.product.name,
-          quantity: i.quantity,
-          price:    i.product.price,
-        }))
-        sendOrderConfirmationEmail(
-          user.email, user.first_name,
-          order.reference, emailItems,
-          Number(order.total), Number(order.delivery_fee),
-          (() => {
-            try {
-              const addr = JSON.parse(order.shipping_address)
-              return [addr.address_line1, addr.city, addr.state, addr.country].filter(Boolean).join(', ')
-            } catch { return '' }
-          })()
-        ).catch(() => {})
+        // 7. EMIT: Socket.io event for real-time frontend update
+        req.app.get('io')?.emit('order:confirmed', {
+          orderId: order.id,
+          reference: paymentRef,
+          timestamp: new Date().toISOString(),
+        })
+
+        // 8. async: Send confirmation email (non-blocking)
+        const orderWithItems = await OrderModel.getOrderWithItems(order.reference)
+        const user = await AuthModel.findById(order.user_id)
+        if (user && orderWithItems) {
+          const emailItems = orderWithItems.items.map((i) => ({
+            name:     i.product.name,
+            quantity: i.quantity,
+            price:    i.product.price,
+          }))
+          sendOrderConfirmationEmail(
+            user.email, user.first_name,
+            order.reference, emailItems,
+            Number(order.total), Number(order.delivery_fee),
+            (() => {
+              try {
+                const addr = JSON.parse(order.shipping_address)
+                return [addr.address_line1, addr.city, addr.state, addr.country].filter(Boolean).join(', ')
+              } catch { return '' }
+            })()
+          ).catch((err) => {
+            logger.error(`Failed to send order confirmation email: ${err}`)
+          })
+        }
+
+        // Deduct stock for Paystack orders (wallet orders already had stock deducted)
+        if (order.payment_method !== 'wallet') {
+          try {
+            await OrderModel.deductStockForOrder(order.id)
+            logger.info(`✓ Stock deducted for order ${paymentRef}`)
+          } catch (err) {
+            logger.error(`Failed to deduct stock for order ${paymentRef}:`, err)
+          }
+        }
+
+      } catch (processError) {
+        logger.error(`Failed to process webhook for ${paymentRef}:`, processError)
+        await OrderModel.updateStatus(order.id, 'payment_failed', 
+          `Webhook processing error: ${processError instanceof Error ? processError.message : 'Unknown error'}`)
+        res.status(200).json({ received: true, message: 'Processing error' })
+        return
       }
     }
 
+    // ─────────────────────────────────────────────────────────────
     // Handle charge.failed event
+    // ─────────────────────────────────────────────────────────────
     if (event.event === 'charge.failed') {
       const order = await OrderModel.findByReference(paymentRef)
       if (order && order.status === 'payment_pending') {
-        await OrderModel.updateStatus(order.id, 'payment_failed', 'Payment failed via webhook')
-        logger.info(`Payment failed for order ${paymentRef} via webhook`)
+        await OrderModel.updateStatus(order.id, 'payment_failed', 
+          `Payment failed via webhook: ${status}`)
+        logger.info(`✓ Payment failed for order ${paymentRef} (via webhook)`)
+
+        // Emit socket event
+        req.app.get('io')?.emit('order:payment-failed', {
+          orderId: order.id,
+          reference: paymentRef,
+          reason: status,
+        })
       }
     }
 
-    res.status(200).json({ received: true })
+    // Always respond 200 to Paystack (receipt acknowledgment)
+    res.status(200).json({ received: true, message: 'Webhook processed' })
   },
 }
 
@@ -1667,6 +1671,136 @@ export const adminController = {
     await ProductModel.recalculateRating(review.product_id)
 
     ok(res, null, 'Review deleted')
+  },
+
+  // ── Admin Webhook Monitoring ────────────────────────────────
+  async getWebhookMetrics(req: Request, res: Response): Promise<void> {
+    try {
+      const hours = req.query.hours ? Number(req.query.hours) : 24
+      const { getMetricsSummary } = await import('@/services/webhook-metrics.service')
+      const metrics = await getMetricsSummary(hours)
+      ok(res, metrics, 'Webhook metrics retrieved')
+    } catch (err) {
+      logger.error('Failed to get webhook metrics:', err)
+      serverError(res, 'Failed to retrieve webhook metrics')
+    }
+  },
+
+  async getWebhookMetricsByType(req: Request, res: Response): Promise<void> {
+    try {
+      const hours = req.query.hours ? Number(req.query.hours) : 24
+      const { getMetricsByEventType } = await import('@/services/webhook-metrics.service')
+      const metricsByType = await getMetricsByEventType(hours)
+      const result = Object.fromEntries(metricsByType)
+      ok(res, result, 'Webhook metrics by type retrieved')
+    } catch (err) {
+      logger.error('Failed to get webhook metrics by type:', err)
+      serverError(res, 'Failed to retrieve webhook metrics')
+    }
+  },
+
+  async getWebhookErrorStatistics(req: Request, res: Response): Promise<void> {
+    try {
+      const hours = req.query.hours ? Number(req.query.hours) : 24
+      const { getErrorStatistics } = await import('@/services/webhook-metrics.service')
+      const stats = await getErrorStatistics(hours)
+      ok(res, stats, 'Error statistics retrieved')
+    } catch (err) {
+      logger.error('Failed to get error statistics:', err)
+      serverError(res, 'Failed to retrieve error statistics')
+    }
+  },
+
+  async getWebhookRetryStatistics(req: Request, res: Response): Promise<void> {
+    try {
+      const hours = req.query.hours ? Number(req.query.hours) : 24
+      const { getRetryStatistics } = await import('@/services/webhook-metrics.service')
+      const stats = await getRetryStatistics(hours)
+      ok(res, stats, 'Retry statistics retrieved')
+    } catch (err) {
+      logger.error('Failed to get retry statistics:', err)
+      serverError(res, 'Failed to retrieve retry statistics')
+    }
+  },
+
+  async getWebhookLogs(req: Request, res: Response): Promise<void> {
+    try {
+      const { limit } = req.query
+      const { getRecentWebhookLogs } = await import('@/services/webhook-logger.service')
+      const logs = await getRecentWebhookLogs(limit ? Number(limit) : 100)
+      ok(res, logs, 'Webhook logs retrieved')
+    } catch (err) {
+      logger.error('Failed to get webhook logs:', err)
+      serverError(res, 'Failed to retrieve webhook logs')
+    }
+  },
+
+  async getWebhookLogsByReference(req: Request, res: Response): Promise<void> {
+    try {
+      const reference = req.params.reference
+      const referenceStr = Array.isArray(reference) ? reference[0] : reference
+      const { getWebhookLogsForReference } = await import('@/services/webhook-logger.service')
+      const logs = await getWebhookLogsForReference(referenceStr)
+      ok(res, logs, 'Webhook logs retrieved')
+    } catch (err) {
+      logger.error('Failed to get webhook logs:', err)
+      serverError(res, 'Failed to retrieve webhook logs')
+    }
+  },
+
+  async getWebhookLogsByStatus(req: Request, res: Response): Promise<void> {
+    try {
+      const { status, limit } = req.query
+      if (!status) {
+        badRequest(res, 'Status query parameter is required')
+        return
+      }
+      const { getWebhookLogsByStatus } = await import('@/services/webhook-logger.service')
+      const logs = await getWebhookLogsByStatus(
+        status as any,
+        limit ? Number(limit) : 100
+      )
+      ok(res, logs, 'Webhook logs retrieved')
+    } catch (err) {
+      logger.error('Failed to get webhook logs:', err)
+      serverError(res, 'Failed to retrieve webhook logs')
+    }
+  },
+
+  async getPaymentMonitoringDashboard(req: Request, res: Response): Promise<void> {
+    try {
+      const hours = req.query.hours ? Number(req.query.hours) : 24
+      
+      const [
+        { getMetricsSummary },
+        { getErrorStatistics },
+        { getRetryStatistics },
+        { getRecentWebhookLogs }
+      ] = await Promise.all([
+        import('@/services/webhook-metrics.service').then(m => ({ getMetricsSummary: m.getMetricsSummary })),
+        import('@/services/webhook-metrics.service').then(m => ({ getErrorStatistics: m.getErrorStatistics })),
+        import('@/services/webhook-metrics.service').then(m => ({ getRetryStatistics: m.getRetryStatistics })),
+        import('@/services/webhook-logger.service').then(m => ({ getRecentWebhookLogs: m.getRecentWebhookLogs })),
+      ])
+
+      const [metrics, errorStats, retryStats, recentLogs] = await Promise.all([
+        getMetricsSummary(hours),
+        getErrorStatistics(hours),
+        getRetryStatistics(hours),
+        getRecentWebhookLogs(50),
+      ])
+
+      ok(res, {
+        period: { hours, since: new Date(Date.now() - hours * 60 * 60 * 1000) },
+        metrics,
+        errorStats,
+        retryStats,
+        recentLogs,
+      }, 'Payment monitoring dashboard retrieved')
+    } catch (err) {
+      logger.error('Failed to get payment monitoring dashboard:', err)
+      serverError(res, 'Failed to retrieve dashboard data')
+    }
   },
 
   // ── Admin Hero Image Management ──────────────────────────

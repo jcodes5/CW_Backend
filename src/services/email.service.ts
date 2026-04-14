@@ -1,16 +1,8 @@
-import nodemailer from 'nodemailer'
+import { Resend } from 'resend'
 import { logger } from '@/utils/logger'
 
-// ── Transporter ───────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host:   process.env.SMTP_HOST   ?? 'smtp.gmail.com',
-  port:   parseInt(process.env.SMTP_PORT ?? '587', 10),
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: {
-    user: process.env.SMTP_USER ?? '',
-    pass: process.env.SMTP_PASS ?? '',
-  },
-})
+// ── Resend client ─────────────────────────────────────────────
+const resend = new Resend(process.env.RESEND_API_KEY ?? '')
 
 const FROM    = process.env.EMAIL_FROM    ?? 'CraftworldCentre <no-reply@craftworldcentre.com>'
 const SUPPORT = process.env.EMAIL_SUPPORT ?? 'hello@craftworldcentre.com'
@@ -64,7 +56,12 @@ function emailShell(bodyHtml: string): string {
 // ── Send helper ───────────────────────────────────────────────
 async function send(to: string, subject: string, html: string): Promise<void> {
   try {
-    await transporter.sendMail({ from: FROM, to, subject, html })
+    await resend.emails.send({
+      from: FROM,
+      to,
+      subject,
+      html,
+    })
     logger.info(`Email sent: "${subject}" → ${to}`)
   } catch (err) {
     logger.error(`Email failed: "${subject}" → ${to}`, err)
@@ -180,6 +177,21 @@ export async function sendOrderStatusEmail(
     <div style="text-align:center">
       <a class="btn" href="${orderUrl}">View Order</a>
     </div>
+  `))
+}
+
+// ── Low stock alert email ──────────────────────────────────────
+export async function sendLowStockAlertEmail(
+  to: string,
+  productName: string,
+  currentStock: number
+): Promise<void> {
+  await send(to, `Low Stock Alert: ${productName} 📉`, emailShell(`
+    <h2>Low Stock Alert</h2>
+    <p><strong>Product:</strong> ${productName}</p>
+    <p><strong>Current Stock:</strong> ${currentStock}</p>
+    <p>Please restock this item as soon as possible.</p>
+    <p>This is an automated notification from CraftworldCentre.</p>
   `))
 }
 

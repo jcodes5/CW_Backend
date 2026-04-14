@@ -8,6 +8,7 @@ const DB_CONFIG = {
   user:     process.env.DB_USER     ?? 'root',
   password: process.env.DB_PASSWORD ?? '',
   database: process.env.DB_NAME     ?? 'nigeriag_craftw_db',
+  multipleStatements: true,
 }
 
 const MIGRATIONS: string[] = [
@@ -409,6 +410,12 @@ const MIGRATIONS: string[] = [
     INDEX idx_active (is_active),
     INDEX idx_sort (sort_order)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+  // ── Webhook Event IDs (for deduplication & tracking) ──────────
+  `ALTER TABLE orders ADD COLUMN webhook_event_id VARCHAR(255) UNIQUE NULL AFTER paystack_ref`,
+  `ALTER TABLE orders ADD COLUMN webhook_processed_at DATETIME NULL AFTER webhook_event_id`,
+  `CREATE INDEX idx_webhook_event ON orders (webhook_event_id)`,
+  `CREATE INDEX idx_webhook_processed ON orders (webhook_processed_at)`,
 ]
 
 async function migrate() {
@@ -418,8 +425,16 @@ async function migrate() {
   try {
     for (const sql of MIGRATIONS) {
       const preview = sql.trim().slice(0, 60).replace(/\n/g, ' ')
-      await conn.execute(sql)
-      console.log(`  ✓ ${preview}…`)
+      try {
+        await conn.execute(sql)
+        console.log(`  ✓ ${preview}…`)
+      } catch (err: any) {
+        if (err.code === 'ER_DUP_FIELDNAME' || err.code === 'ER_DUP_KEYNAME') {
+          console.log(`  ⚠ Skipped (already exists): ${preview}…`)
+        } else {
+          throw err
+        }
+      }
     }
     console.log('\n✅ All migrations completed successfully.\n')
   } catch (err) {

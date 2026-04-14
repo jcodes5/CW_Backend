@@ -175,8 +175,14 @@ payments.post('/webhook',       paymentController.webhook)
 // Initialize payment - creates order AND Paystack transaction (authenticated)
 payments.post('/initialize',     authenticate, h(paymentController.initialize))
 
-// Verify payment - called from frontend callback (authenticated)
+// Verify payment - polling endpoint (authenticated)
 payments.post('/verify',        authenticate, h(paymentController.verify))
+
+// Admin: Manual payment confirmation (admin only)
+payments.post('/admin/confirm-payment', authenticate, requireAdmin, h(paymentController.adminConfirmPayment))
+
+// Admin: Get payment diagnostics (admin only)
+payments.get('/admin/diagnostics/:reference', authenticate, requireAdmin, h(paymentController.adminGetDiagnostics))
 
 router.use('/payments', payments)
 
@@ -334,6 +340,7 @@ wallet.post('/deposit/init', h(async (req: AuthRequest, res: Response) => {
   }
   
   try {
+    // 1. Get user from database
     const authModel = await import('@/models/auth.model')
     const user = await authModel.findById(req.user!.userId)
     if (!user) {
@@ -341,10 +348,10 @@ wallet.post('/deposit/init', h(async (req: AuthRequest, res: Response) => {
       return
     }
     
-    // Generate unique reference for this transaction
+    // 2. Generate unique reference for this transaction
     const reference = `WALLET-${req.user!.userId.substring(0, 8)}-${Date.now()}-${randomToken(8)}`
     
-    // Initialize Paystack payment
+    // 3. Initialize Paystack payment
     const { initializePayment } = await import('@/services/paystack.service')
     const payment = await initializePayment({
       email: user.email,
@@ -357,19 +364,27 @@ wallet.post('/deposit/init', h(async (req: AuthRequest, res: Response) => {
       },
     })
     
-    // Store pending transaction reference for tracking
-    const pendingRef = reference
-    
+    // 4. Send response with payment link
     created(res, {
-      reference: pendingRef,
+      reference: reference,
       authorizationUrl: payment.authorization_url,
       accessCode: payment.access_code,
       amount: numAmount,
-      message: 'Payment link generated. Redirect to Paystack to complete payment.',
-    }, 'Payment initialized')
+    }, 'Payment link generated')
   } catch (err) {
-    const error = err instanceof Error ? err.message : 'Failed to initialize payment'
-    serverError(res, error)
+    // Log the full error for debugging
+    const errorMsg = err instanceof Error ? err.message : String(err)
+    
+    // Check for specific error types
+    if (errorMsg.includes('Paystack authentication failed')) {
+      serverError(res, 'Wallet service is not properly configured. Contact support.')
+    } else if (errorMsg.includes('Paystack API request timeout')) {
+      serverError(res, 'Payment service is not responding. Please try again in a moment.')
+    } else if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('connect')) {
+      serverError(res, 'Cannot connect to payment service. Please check your internet connection.')
+    } else {
+      serverError(res, `Failed to initialize payment: ${errorMsg}`)
+    }
   }
 }))
 

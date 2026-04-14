@@ -48,6 +48,7 @@ export const registerValidators = [
 export const loginValidators = [
   body('email').trim().normalizeEmail().isEmail().withMessage('Valid email is required'),
   body('password').notEmpty().withMessage('Password is required'),
+  body('rememberMe').optional().isBoolean(),
 ]
 
 export const forgotPasswordValidators = [

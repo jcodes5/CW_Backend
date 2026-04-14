@@ -28,12 +28,21 @@ export async function initializePayment(params: {
   reference: string
 }> {
   logger.info(`Initializing Paystack payment for ${params.reference}`)
-  const result = await paystackService.initializePayment(params)
+
+  const result = await paystackService.initializePayment({
+    email: params.email,
+    amount: params.amount,
+    reference: params.reference,
+    metadata: params.metadata,
+    callback_url: params.callbackUrl, // map camelCase -> snake_case
+  })
+
   return {
     authorizationUrl: result.authorization_url,
     reference: result.reference,
   }
 }
+
 
 // Verify payment with Paystack
 export async function verifyPayment(reference: string): Promise<{

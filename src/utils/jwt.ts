@@ -6,7 +6,7 @@ const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET ?? 'dev_refresh_secret_cha
 const ACCESS_EXPIRES  = process.env.JWT_ACCESS_EXPIRES  ?? '15m'
 const REFRESH_EXPIRES = process.env.JWT_REFRESH_EXPIRES ?? '7d'
 
-export function generateTokenPair(payload: JWTPayload): TokenPair {
+export function generateTokenPair(payload: JWTPayload, refreshExpires?: string): TokenPair {
   const accessToken = jwt.sign(payload, ACCESS_SECRET, {
     expiresIn: ACCESS_EXPIRES as jwt.SignOptions['expiresIn'],
     issuer: 'craftworldcentre',
@@ -14,7 +14,7 @@ export function generateTokenPair(payload: JWTPayload): TokenPair {
   })
 
   const refreshToken = jwt.sign(payload, REFRESH_SECRET, {
-    expiresIn: REFRESH_EXPIRES as jwt.SignOptions['expiresIn'],
+    expiresIn: (refreshExpires || REFRESH_EXPIRES) as jwt.SignOptions['expiresIn'],
     issuer: 'craftworldcentre',
     audience: 'craftworldcentre-client',
   })

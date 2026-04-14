@@ -231,6 +231,31 @@ export async function confirmPayment(
   if (order) {
     await RewardsModel.awardOrderPoints(order.user_id, orderId, Number(order.total)).catch(() => {})
   }
+  
+  // NEW: Deduct stock after payment confirmation
+  await deductStockForOrder(orderId)
+}
+
+// ── Check and alert low stock ──────────────────────────────────
+export async function checkAndAlertLowStock(productId: string): Promise<void> {
+  const product = await queryOne<import('@/types').ProductRow>(
+    'SELECT * FROM products WHERE id = ?',
+    [productId]
+  )
+  if (!product) return
+
+  const LOW_STOCK_THRESHOLD = parseInt(process.env.LOW_STOCK_THRESHOLD || '10', 10)
+  if (product.stock <= LOW_STOCK_THRESHOLD) {
+    // Import email service (add to imports)
+    const { sendLowStockAlertEmail } = await import('@/services/email.service')
+    
+    // Send alert to admin/production
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@craftworldcentre.com'
+    const productionEmail = process.env.PRODUCTION_EMAIL || 'production@craftworldcentre.com'
+    
+    await sendLowStockAlertEmail(adminEmail, product.name, product.stock)
+    await sendLowStockAlertEmail(productionEmail, product.name, product.stock)
+  }
 }
 
 // ── Deduct stock for order items ──────────────────────────────
@@ -248,6 +273,9 @@ export async function deductStockForOrder(orderId: string): Promise<void> {
         'UPDATE products SET stock = stock - ? WHERE id = ?',
         [item.quantity, item.product_id]
       )
+      
+      // NEW: Check for low stock alerts
+      await checkAndAlertLowStock(item.product_id)
     }
   })
 }

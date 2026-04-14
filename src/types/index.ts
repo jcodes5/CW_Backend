@@ -145,6 +145,8 @@ export type OrderStatus =
   | 'refunded'
 
 export interface OrderRow {
+  [x: string]: any
+  webhook_event_id: any
   id: string
   reference: string
   user_id: string

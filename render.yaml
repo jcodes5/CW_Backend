@@ -7,27 +7,23 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: API_VERSION
+        value: v1
       - key: DB_HOST
-        fromDatabase:
-          name: craftworldcentre-db
-          property: host
+        value: 144.76.18.104  # Your external database IP
       - key: DB_PORT
-        fromDatabase:
-          name: craftworldcentre-db
-          property: port
+        value: 3306           # Your external database port
       - key: DB_USER
-        fromDatabase:
-          name: craftworldcentre-db
-          property: username
+        value: nigeriag_craftw_user  # Your external database user
       - key: DB_PASSWORD
-        fromDatabase:
-          name: craftworldcentre-db
-          property: password
+        sync: false                  # Keep this secure
       - key: DB_NAME
-        fromDatabase:
-          name: craftworldcentre-db
-          property: database
-      - key: JWT_SECRET
+        value: nigeriag_craftw_db    # Your external database name
+      - key: DB_CONNECTION_LIMIT
+        value: 10
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
         sync: false
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
@@ -35,14 +31,17 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      - key: CLOUDINARY_FOLDER
+        value: craftworldcentre
       - key: PAYSTACK_SECRET_KEY
         sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        value: pk_test_114c21fffccc16b3ef3582d43192e6a5841c48dd
       - key: COOKIE_SECRET
         sync: false
+      - key: FRONTEND_URL
+        value: https://your-frontend-project.vercel.app  # Replace with your actual Vercel URL
       - key: ALLOWED_ORIGINS
-        value: https://your-frontend-url.vercel.app  # Replace with your actual Vercel frontend URL
-
-databases:
-  - name: craftworldcentre-db
-    region: frankfurt  # Choose the region closest to your target audience
-    plan: free
+        value: https://your-frontend-project.vercel.app  # Replace with your actual Vercel URL
+      - key: BACKEND_URL
+        value: https://your-backend-project.onrender.com # Replace with your Render backend URL

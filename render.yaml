@@ -1,0 +1,48 @@
+services:
+  - type: web
+    name: craftworldcentre-backend
+    runtime: node
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_HOST
+        fromDatabase:
+          name: craftworldcentre-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: craftworldcentre-db
+          property: port
+      - key: DB_USER
+        fromDatabase:
+          name: craftworldcentre-db
+          property: username
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: craftworldcentre-db
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: craftworldcentre-db
+          property: database
+      - key: JWT_SECRET
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: COOKIE_SECRET
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://your-frontend-url.vercel.app  # Replace with your actual Vercel frontend URL
+
+databases:
+  - name: craftworldcentre-db
+    region: frankfurt  # Choose the region closest to your target audience
+    plan: free

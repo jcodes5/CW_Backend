@@ -76,12 +76,14 @@ const auth = Router()
  *               confirmPassword: { type: string }
  *               phone:           { type: string }
  */
-auth.post('/register',        registerValidators,       validate, authController.register)
-auth.post('/login',           loginValidators,          validate, authController.login)
-auth.post('/logout',          authenticate, h(authController.logout)) // Fixed: logout needs authentication
-auth.post('/refresh',         authController.refresh)
-auth.post('/forgot-password', forgotPasswordValidators, validate, authController.forgotPassword)
-auth.post('/reset-password',  resetPasswordValidators,  validate, authController.resetPassword)
+auth.post('/register',             registerValidators,       validate, authController.register)
+auth.post('/login',                loginValidators,          validate, authController.login)
+auth.post('/logout',               authenticate, h(authController.logout)) // Fixed: logout needs authentication
+auth.post('/refresh',              authController.refresh)
+auth.post('/forgot-password',      forgotPasswordValidators, validate, authController.forgotPassword)
+auth.post('/reset-password',       resetPasswordValidators,  validate, authController.resetPassword)
+auth.post('/verify-email',         authController.verifyEmail)
+auth.post('/resend-verification',  authController.resendVerification)
 
 // OAuth routes
 auth.get('/google',           authController.googleLogin)

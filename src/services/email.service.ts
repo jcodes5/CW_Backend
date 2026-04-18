@@ -72,13 +72,14 @@ async function send(to: string, subject: string, html: string): Promise<void> {
 // ── Welcome / verification email ─────────────────────────────
 export async function sendWelcomeEmail(to: string, firstName: string, verifyToken: string): Promise<void> {
   const verifyUrl = `${FE_URL}/verify-email?token=${verifyToken}`
-  await send(to, 'Welcome to CraftworldCentre 🌿', emailShell(`
+  await send(to, 'Welcome to CraftworldCentre 🌿 - Verify Your Email', emailShell(`
     <h2>Welcome, ${firstName}! 🎉</h2>
     <p>You've just joined Nigeria's leading circular economy marketplace. Every product you buy from us diverts waste from landfill and supports artisan livelihoods.</p>
-    <p>To get started, verify your email address:</p>
+    <p><strong>Please verify your email address to get started:</strong></p>
     <div style="text-align:center"><a class="btn" href="${verifyUrl}">Verify My Email</a></div>
     <p>Or copy this link into your browser:</p>
     <p style="word-break:break-all;font-size:12px;color:#9ca3af">${verifyUrl}</p>
+    <p>This verification link expires in 24 hours.</p>
     <hr class="divider" />
     <p>If you didn't create an account, you can safely ignore this email.</p>
   `))

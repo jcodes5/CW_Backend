@@ -76,13 +76,13 @@ export const authController = {
     })
 
     // Send welcome email async (don't await)
-    const verifyToken = randomToken(32)
+    const verifyToken = (user as any).verify_token
     sendWelcomeEmail(user.email, user.first_name, verifyToken).catch(() => {})
 
     created(res, {
       user:        AuthModel.toUserDTO(user),
       accessToken: tokens.accessToken,
-    }, 'Account created successfully')
+    }, 'Account created successfully. Please check your email to verify your account.')
   },
 
   async login(req: Request, res: Response): Promise<void> {
@@ -95,6 +95,8 @@ export const authController = {
     if (!valid)  { unauthorized(res, 'Invalid email or password'); return }
 
     if (!user.is_active) { forbidden(res, 'Account has been deactivated'); return }
+
+    if (!user.is_verified) { unauthorized(res, 'Please verify your email before signing in. Check your inbox for a verification link.'); return }
 
     const refreshExpires = rememberMe ? '30d' : undefined
     const tokens = generateTokenPair({ userId: user.id, email: user.email, role: user.role }, refreshExpires)
@@ -187,6 +189,49 @@ export const authController = {
     await AuthModel.resetPassword(user.id, password)
     res.clearCookie('refreshToken')
     ok(res, null, 'Password reset successfully. Please log in.')
+  },
+
+  // ── Email verification endpoints ────────────────────────────
+
+  async verifyEmail(req: Request, res: Response): Promise<void> {
+    const { token } = req.body
+    if (!token) { badRequest(res, 'Verification token is required'); return }
+
+    const user = await AuthModel.findByVerifyToken(token)
+    if (!user) {
+      // Return success to prevent enumeration, but don't verify
+      ok(res, null, 'Email verification processed successfully.')
+      return
+    }
+
+    await AuthModel.verifyUserEmail(user.id)
+    ok(res, null, 'Email verified successfully! You can now log in.')
+  },
+
+  async resendVerification(req: Request, res: Response): Promise<void> {
+    const { email } = req.body
+    if (!email) { badRequest(res, 'Email is required'); return }
+
+    const user = await AuthModel.findByEmail(email)
+    if (!user) {
+      // Always return success to prevent enumeration
+      ok(res, null, 'If that email exists, a verification link has been sent.')
+      return
+    }
+
+    if (user.is_verified) {
+      ok(res, null, 'Account is already verified.')
+      return
+    }
+
+    // Generate new token
+    const verifyToken = randomToken(32)
+    await AuthModel.storeVerifyToken(user.id, verifyToken)
+
+    // Send verification email
+    sendWelcomeEmail(user.email, user.first_name, verifyToken).catch(() => {})
+
+    ok(res, null, 'Verification email sent successfully.')
   },
 
   async getMe(req: AuthRequest, res: Response): Promise<void> {

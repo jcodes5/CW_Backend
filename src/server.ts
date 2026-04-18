@@ -4,6 +4,7 @@ import http from 'http'
 import { createApp } from './app'
 import { testDatabaseConnection } from './config/database'
 import { initSocket } from './sockets'
+import { cleanupExpiredTokens } from './services/cleanup.service'
 import { logger } from './utils/logger'
 
 const PORT = parseInt(process.env.PORT ?? '5000', 10)
@@ -38,7 +39,11 @@ async function bootstrap(): Promise<void> {
     `.trim())
   })
 
-  // ── 6. Graceful shutdown ──────────────────────────────────────
+  // ── 6. Start cleanup jobs ─────────────────────────────────────
+  // Run cleanup every 6 hours
+  setInterval(cleanupExpiredTokens, 6 * 60 * 60 * 1000)
+
+  // ── 7. Graceful shutdown ──────────────────────────────────────
   const shutdown = (signal: string) => {
     logger.info(`Received ${signal} — shutting down gracefully`)
     httpServer.close(() => {

@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import bcrypt from 'bcryptjs'
 import { queryOne, execute } from '@/config/database'
 import type { UserRow, RegisterBody } from '@/types'
-import { hashToken } from '@/utils/crypto'
+import { hashToken, randomToken } from '@/utils/crypto'
 
 // ── Find user by email ────────────────────────────────────────
 export async function findByEmail(email: string): Promise<UserRow | null> {
@@ -32,14 +32,19 @@ export async function findById(id: string): Promise<UserRow | null> {
 export async function createUser(data: RegisterBody): Promise<UserRow> {
   const id           = uuidv4()
   const passwordHash = await bcrypt.hash(data.password, parseInt(process.env.BCRYPT_ROUNDS ?? '12', 10))
+  const verifyToken  = randomToken(32)
+  const verifyTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
   await execute(
-    `INSERT INTO users (id, first_name, last_name, email, phone, password_hash, provider, role, is_active, is_verified)
-     VALUES (?, ?, ?, ?, ?, ?, 'local', 'customer', 1, 0)`,
-    [id, data.firstName.trim(), data.lastName.trim(), data.email.toLowerCase(), data.phone ?? null, passwordHash]
+    `INSERT INTO users (id, first_name, last_name, email, phone, password_hash, provider, role, is_active, is_verified, verify_token, verify_token_expires)
+     VALUES (?, ?, ?, ?, ?, ?, 'local', 'customer', 1, 0, ?, ?)`,
+    [id, data.firstName.trim(), data.lastName.trim(), data.email.toLowerCase(), data.phone ?? null, passwordHash, hashToken(verifyToken), verifyTokenExpires]
   )
 
-  return findById(id) as Promise<UserRow>
+  const user = await findById(id) as UserRow
+  // Attach the plain token for email sending
+  ;(user as any).verify_token = verifyToken
+  return user
 }
 
 // ── Create OAuth user ──────────────────────────────────────────
@@ -190,6 +195,35 @@ export async function updateProfile(
 // ── Update last login ─────────────────────────────────────────
 export async function updateLastLogin(userId: string): Promise<void> {
   await execute('UPDATE users SET last_login_at = NOW() WHERE id = ?', [userId])
+}
+
+// ── Find user by verification token ───────────────────────────
+export async function findByVerifyToken(token: string): Promise<UserRow | null> {
+  const tokenHash = hashToken(token)
+  return queryOne<UserRow>(
+    `SELECT * FROM users
+     WHERE verify_token = ? AND verify_token_expires > NOW() AND is_active = 1 AND is_verified = 0 LIMIT 1`,
+    [tokenHash]
+  )
+}
+
+// ── Verify user email ─────────────────────────────────────────
+export async function verifyUserEmail(userId: string): Promise<void> {
+  await execute(
+    'UPDATE users SET is_verified = 1, verify_token = NULL, verify_token_expires = NULL WHERE id = ?',
+    [userId]
+  )
+}
+
+// ── Store new verification token (for resend) ─────────────────
+export async function storeVerifyToken(userId: string, token: string): Promise<void> {
+  const tokenHash = hashToken(token)
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+  await execute(
+    'UPDATE users SET verify_token = ?, verify_token_expires = ? WHERE id = ?',
+    [tokenHash, expires, userId]
+  )
 }
 
 // ── Map DB row to API shape ───────────────────────────────────

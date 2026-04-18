@@ -92,6 +92,16 @@ export function createApp(): Express {
   app.use('/api/v1/auth/register',        authLimiter)
   app.use('/api/v1/auth/forgot-password', authLimiter)
 
+  // Verification rate limiter (5 requests per hour per IP)
+  const verificationLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5,
+    message: { success: false, message: 'Too many verification attempts. Please try again later.' },
+    skip: () => process.env.NODE_ENV === 'test',
+  })
+  app.use('/api/v1/auth/verify-email',        verificationLimiter)
+  app.use('/api/v1/auth/resend-verification', verificationLimiter)
+
   // ── API Documentation ─────────────────────────────────────────
   if (process.env.NODE_ENV !== 'production') {
     app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {

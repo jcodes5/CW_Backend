@@ -59,8 +59,8 @@ export async function createOAuthUser(data: {
   const id = uuidv4()
 
   await execute(
-    `INSERT INTO users (id, first_name, last_name, email, avatar, provider, provider_id, role, is_active, is_verified)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'customer', 1, 1)`,
+    `INSERT INTO users (id, first_name, last_name, email, avatar, password_hash, provider, provider_id, role, is_active, is_verified)
+     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'customer', 1, 1)`,
     [id, data.firstName.trim(), data.lastName.trim(), data.email.toLowerCase(), data.avatar ?? null, data.provider, data.providerId]
   )
 

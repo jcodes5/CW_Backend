@@ -70,7 +70,17 @@ export async function createOrder(data: CreateOrderData): Promise<OrderRow> {
 
     // Calculate delivery fee
     const state        = (data.shippingAddress.state as string) ?? ''
-    const deliveryFee  = getDeliveryFee(state, subtotal)
+    // Calculate total weight of items in the order
+    let totalWeight = 0;
+    for (const item of resolvedItems) {
+      // Assuming each product has a weight property, default to 1kg if not provided
+      // We would need to add weight to the product model, for now defaulting to 1kg per item
+      const product = JSON.parse(item.snapshot);
+      const itemWeight = product.weight || 1; // Default to 1kg if weight not specified
+      totalWeight += itemWeight * item.quantity;
+    }
+    
+    const deliveryFee  = getDeliveryFee(state, subtotal, totalWeight)
     const total        = subtotal + deliveryFee
 
     // Delivery estimate
@@ -362,7 +372,7 @@ export function toOrderDTO(order: OrderRow) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────
-function getDeliveryFee(state: string, subtotal: number): number {
+function getDeliveryFee(state: string, subtotal: number, _totalWeight: number): number {
   if (subtotal >= 25000) return 0
   const feeMap: Record<string, number> = {
     Lagos: 2000, Ogun: 2500, Oyo: 3000, Osun: 3000, Ekiti: 3500,

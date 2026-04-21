@@ -90,17 +90,36 @@ export function getDeliveryEstimate(state: string): string {
   })
 }
 
-export function getDeliveryFee(state: string, subtotal: number): number {
+export function getDeliveryFee(state: string, subtotal: number, weightInKg?: number): number {
   if (subtotal >= 25000) return 0
-  const zone1 = ['Lagos']
-  const zone2 = ['Ogun']
-  const zone3 = ['Oyo', 'Osun', 'Ekiti', 'Ondo', 'FCT - Abuja']
-  const zone4 = ['Rivers', 'Edo', 'Delta', 'Anambra', 'Enugu', 'Imo', 'Abia']
-  const zone5 = ['Kano', 'Kaduna']
-  if (zone1.includes(state)) return 2000
-  if (zone2.includes(state)) return 2500
-  if (zone3.includes(state)) return 3000
-  if (zone4.includes(state)) return 3500
-  if (zone5.includes(state)) return 4500
-  return 5000
+  
+  // Default to 1kg if weight is not provided
+  const actualWeight = weightInKg || 1;
+  
+  // Determine zone based on state
+  const zone1 = ['Abeokuta']; // Zone 1
+  const zone2 = ['Lagos', 'Akure', 'Ado-Ekiti', 'Ibadan', 'Ogbomosho', 'Oshogbo', 'Ota', 'Ilorin']; // Zone 2
+  const zone3 = ['Aba', 'Asaba', 'Enugu', 'Onitsha', 'Owerri', 'Umuahia', 'Abuja', 'Benin', 'Calabar', 'Port Harcourt', 'Uyo', 'Warri', 'Yenagoa']; // Zone 3
+  const zone4 = ['Lafia', 'Lokoja', 'Makurdi', 'Minna', 'Bauchi', 'Jalingo', 'Jos', 'Gombe', 'Maiduguri', 'Damaturu', 'Yola', 'Kaduna', 'Katsina', 'Dutse', 'Birnin Kebbi', 'Sokoto', 'Kano']; // Zone 4
+  
+  // Calculate fees based on zones
+  if (zone1.includes(state)) {
+    // Zone 1: ₦3,500 for 0.5kg, ₦100 per additional kg
+    return 3500 + Math.max(0, Math.ceil(actualWeight - 0.5)) * 100;
+  }
+  if (zone2.includes(state)) {
+    // Zone 2: ₦2,000 for 0.5kg, ₦100 per additional kg
+    return 2000 + Math.max(0, Math.ceil(actualWeight - 0.5)) * 100;
+  }
+  if (zone3.includes(state)) {
+    // Zone 3: ₦3,000 for 0.5kg, ₦100 per additional kg
+    return 3000 + Math.max(0, Math.ceil(actualWeight - 0.5)) * 100;
+  }
+  if (zone4.includes(state)) {
+    // Zone 4: ₦4,000 for 0.5kg, ₦100 per additional kg
+    return 4000 + Math.max(0, Math.ceil(actualWeight - 0.5)) * 100;
+  }
+  
+  // Default for other areas: Zone 4 pricing
+  return 4000 + Math.max(0, Math.ceil(actualWeight - 0.5)) * 100;
 }

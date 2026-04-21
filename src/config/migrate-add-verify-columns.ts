@@ -14,20 +14,19 @@ const DB_CONFIG = {
   user:     process.env.DB_USER     ?? 'root',
   password: process.env.DB_PASSWORD ?? '',
   database: process.env.DB_NAME     ?? 'nigeriag_craftw_db',
-  connectionTimeout: 30000,
 }
 
 const MIGRATIONS: string[] = [
   // Add verify_token if not exists
-  `ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_token VARCHAR(255) NULL`,
+  `ALTER TABLE users ADD COLUMN verify_token VARCHAR(255) NULL`,
   
   // Add verify_token_expires if not exists
-  `ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_token_expires DATETIME NULL`,
+  `ALTER TABLE users ADD COLUMN verify_token_expires DATETIME NULL`,
   
   // Add indexes if they don't exist
-  `ALTER TABLE users ADD INDEX IF NOT EXISTS idx_verify_token (verify_token)`,
+  `ALTER TABLE users ADD INDEX idx_verify_token (verify_token)`,
   
-  `ALTER TABLE users ADD INDEX IF NOT EXISTS idx_verify_expires (verify_token_expires)`,
+  `ALTER TABLE users ADD INDEX idx_verify_expires (verify_token_expires)`,
 ]
 
 async function migrate() {
@@ -44,7 +43,8 @@ async function migrate() {
       await conn.execute(sql)
       console.log(`  ✓ ${preview}…`)
     } catch (err: any) {
-      if (err.code === 'ER_DUP_FIELDNAME' || err.code === 'ER_DUP_KEYNAME') {
+      // Ignore duplicate column (1060) and duplicate key (1061) errors
+      if (err.code === 'ER_DUP_FIELDNAME' || err.code === 'ER_DUP_KEYNAME' || err.errno === 1060 || err.errno === 1061) {
         console.log(`  ⚠ Skipped (already exists): ${preview}…`)
       } else {
         console.error(`\n❌ Migration failed at step ${i + 1}:`, err.message)

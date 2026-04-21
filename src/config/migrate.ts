@@ -9,8 +9,6 @@ const DB_CONFIG = {
   password: process.env.DB_PASSWORD ?? '',
   database: process.env.DB_NAME     ?? 'nigeriag_craftw_db',
   multipleStatements: true,
-  connectionTimeout: 30000,
-  waitForConnections: true,
 }
 
 const MIGRATIONS: string[] = [
@@ -435,7 +433,7 @@ async function migrate() {
         await conn.execute(sql)
         console.log(`  ✓ ${preview}…`)
       } catch (err: any) {
-        if (err.code === 'ER_DUP_FIELDNAME' || err.code === 'ER_DUP_KEYNAME') {
+        if (err.code === 'ER_DUP_FIELDNAME' || err.code === 'ER_DUP_KEYNAME' || err.errno === 1060 || err.errno === 1061) {
           console.log(`  ⚠ Skipped (already exists): ${preview}…`)
         } else {
           throw err

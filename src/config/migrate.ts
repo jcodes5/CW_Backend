@@ -9,6 +9,8 @@ const DB_CONFIG = {
   password: process.env.DB_PASSWORD ?? '',
   database: process.env.DB_NAME     ?? 'nigeriag_craftw_db',
   multipleStatements: true,
+  connectionTimeout: 30000,
+  waitForConnections: true,
 }
 
 const MIGRATIONS: string[] = [

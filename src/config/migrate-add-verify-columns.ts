@@ -14,6 +14,7 @@ const DB_CONFIG = {
   user:     process.env.DB_USER     ?? 'root',
   password: process.env.DB_PASSWORD ?? '',
   database: process.env.DB_NAME     ?? 'nigeriag_craftw_db',
+  connectionTimeout: 30000,
 }
 
 const MIGRATIONS: string[] = [
@@ -31,21 +32,31 @@ const MIGRATIONS: string[] = [
 
 async function migrate() {
   console.log('🔄 Running migration to add missing verification columns…')
-  const conn = await mysql.createConnection(DB_CONFIG)
-
-  try {
-    for (const sql of MIGRATIONS) {
-      const preview = sql.trim().slice(0, 70).replace(/\n/g, ' ')
+  
+  // Create a new connection for each migration to avoid connection resets
+  for (let i = 0; i < MIGRATIONS.length; i++) {
+    const sql = MIGRATIONS[i]
+    const preview = sql.trim().slice(0, 70).replace(/\n/g, ' ')
+    
+    let conn
+    try {
+      conn = await mysql.createConnection(DB_CONFIG)
       await conn.execute(sql)
       console.log(`  ✓ ${preview}…`)
+    } catch (err: any) {
+      if (err.code === 'ER_DUP_FIELDNAME' || err.code === 'ER_DUP_KEYNAME') {
+        console.log(`  ⚠ Skipped (already exists): ${preview}…`)
+      } else {
+        console.error(`\n❌ Migration failed at step ${i + 1}:`, err.message)
+        process.exit(1)
+      }
+    } finally {
+      if (conn) await conn.end()
     }
-    console.log('\n✅ Migration completed.\n')
-  } catch (err) {
-    console.error('\n❌ Migration failed:', err)
-    process.exit(1)
-  } finally {
-    await conn.end()
   }
+  
+  console.log('\n✅ Migration completed.\n')
 }
 
 migrate().catch(console.error)
+

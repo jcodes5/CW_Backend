@@ -1,4 +1,4 @@
-import { connection as db } from '../config/database'
+import db from '../config/database'
 import type { UserPermissions, UserPermissionsRow } from '../types'
 
 /**
@@ -15,7 +15,8 @@ const ADMIN_LIMIT = 5
 export async function validateSuperAdminCount(): Promise<boolean> {
   try {
     const result = await db.query('SELECT COUNT(*) as count FROM users WHERE role = ?', ['super_admin'])
-    const count = result[0][0]?.count || 0
+    const rows = result[0] as Array<{count: number}>
+    const count = rows && rows.length > 0 ? rows[0].count || 0 : 0
     return count <= SUPER_ADMIN_LIMIT
   } catch (error) {
     console.error('Error validating super admin count:', error)
@@ -29,7 +30,8 @@ export async function validateSuperAdminCount(): Promise<boolean> {
 export async function getSuperAdminCount(): Promise<number> {
   try {
     const result = await db.query('SELECT COUNT(*) as count FROM users WHERE role = ?', ['super_admin'])
-    return result[0][0]?.count || 0
+    const rows = result[0] as Array<{count: number}>
+    return rows && rows.length > 0 ? rows[0].count || 0 : 0
   } catch (error) {
     console.error('Error getting super admin count:', error)
     throw error
@@ -42,7 +44,8 @@ export async function getSuperAdminCount(): Promise<number> {
 export async function validateAdminCount(): Promise<boolean> {
   try {
     const result = await db.query('SELECT COUNT(*) as count FROM users WHERE role = ?', ['admin'])
-    const count = result[0][0]?.count || 0
+    const rows = result[0] as Array<{count: number}>
+    const count = rows && rows.length > 0 ? rows[0].count || 0 : 0
     return count < ADMIN_LIMIT
   } catch (error) {
     console.error('Error validating admin count:', error)
@@ -56,7 +59,8 @@ export async function validateAdminCount(): Promise<boolean> {
 export async function getAdminCount(): Promise<number> {
   try {
     const result = await db.query('SELECT COUNT(*) as count FROM users WHERE role = ?', ['admin'])
-    return result[0][0]?.count || 0
+    const rows = result[0] as Array<{count: number}>
+    return rows && rows.length > 0 ? rows[0].count || 0 : 0
   } catch (error) {
     console.error('Error getting admin count:', error)
     throw error
@@ -73,11 +77,12 @@ export async function getPermissions(userId: string): Promise<UserPermissions | 
       [userId]
     )
 
-    if (!result[0] || result[0].length === 0) {
+    const rows = result[0] as UserPermissionsRow[]
+    if (!rows || rows.length === 0) {
       return null
     }
 
-    const row = result[0][0] as UserPermissionsRow
+    const row = rows[0]
     return {
       userId: row.user_id,
       canAddProducts: Boolean(row.can_add_products),
@@ -151,10 +156,8 @@ export async function assignRole(userId: string, newRole: 'super_admin' | 'admin
       // For customer or vendor, just update role
       await db.query('UPDATE users SET role = ? WHERE id = ?', [newRole, userId])
 
-      // Delete permissions if not admin role
-      if (newRole !== 'admin' && newRole !== 'super_admin') {
-        await db.query('DELETE FROM user_permissions WHERE user_id = ?', [userId])
-      }
+      // Delete permissions if not admin role (since we're in else branch, we know it's not admin/super_admin)
+      await db.query('DELETE FROM user_permissions WHERE user_id = ?', [userId])
     }
   } catch (error) {
     console.error('Error assigning role:', error)
@@ -237,12 +240,13 @@ export async function initializeAdminPermissions(userId: string, isSuperAdmin: b
 export async function revokeAdminRole(userId: string): Promise<void> {
   try {
     // Get current user role
-    const userResult = await db.query('SELECT role FROM users WHERE id = ?', [userId])
-    if (!userResult[0] || userResult[0].length === 0) {
+    const result = await db.query('SELECT role FROM users WHERE id = ?', [userId])
+    const rows = result[0] as Array<{role: string}>
+    if (!rows || rows.length === 0) {
       throw new Error('User not found')
     }
 
-    const currentRole = userResult[0][0].role
+    const currentRole = rows[0].role
 
     // Prevent revoking last super_admin
     if (currentRole === 'super_admin') {
@@ -292,9 +296,19 @@ export async function getAllAdmins(): Promise<
       ORDER BY role DESC, created_at DESC`
     )
 
-    if (!result[0]) return []
+    const rows = result[0] as Array<{
+      id: string
+      firstName: string
+      lastName: string
+      email: string
+      role: 'super_admin' | 'admin'
+      isActive: number
+      createdAt: string
+    }>
 
-    return result[0].map((row: any) => ({
+    if (!rows) return []
+
+    return rows.map((row: any) => ({
       id: row.id,
       firstName: row.firstName,
       lastName: row.lastName,
@@ -315,8 +329,9 @@ export async function getAllAdmins(): Promise<
 export async function isSuperAdmin(userId: string): Promise<boolean> {
   try {
     const result = await db.query('SELECT role FROM users WHERE id = ?', [userId])
-    if (!result[0] || result[0].length === 0) return false
-    return result[0][0].role === 'super_admin'
+    const rows = result[0] as Array<{role: string}>
+    if (!rows || rows.length === 0) return false
+    return rows[0].role === 'super_admin'
   } catch (error) {
     console.error('Error checking if user is super admin:', error)
     throw error
@@ -329,8 +344,9 @@ export async function isSuperAdmin(userId: string): Promise<boolean> {
 export async function isAdmin(userId: string): Promise<boolean> {
   try {
     const result = await db.query('SELECT role FROM users WHERE id = ?', [userId])
-    if (!result[0] || result[0].length === 0) return false
-    const role = result[0][0].role
+    const rows = result[0] as Array<{role: string}>
+    if (!rows || rows.length === 0) return false
+    const role = rows[0].role
     return role === 'super_admin' || role === 'admin'
   } catch (error) {
     console.error('Error checking if user is admin:', error)

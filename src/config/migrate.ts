@@ -9,6 +9,17 @@ const DB_CONFIG = {
   password: process.env.DB_PASSWORD ?? '',
   database: process.env.DB_NAME     ?? 'nigeriag_craftw_db',
   multipleStatements: true,
+  // Adding connection options to handle timeout issues
+  connectTimeout: 60000, // 60 seconds
+  acquireTimeout: 60000, // 60 seconds
+  timeout: 60000, // 60 seconds
+  reconnect: true,
+  ssl: process.env.DB_SSL ? { rejectUnauthorized: false } : undefined,
+  // Additional connection settings
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 30000,
+  charset: 'utf8mb4',
+  timezone: '+00:00',
 }
 
 const MIGRATIONS: string[] = [
@@ -472,13 +483,34 @@ const MIGRATIONS: string[] = [
 
 async function migrate() {
   console.log('🔄 Running database migrations…')
-  const conn = await mysql.createConnection(DB_CONFIG)
+  
+  // Implementing retry logic for connection
+  let conn: mysql.Connection | null = null; // Initialize to null and define type
+  let retries = 3;
+  
+  while(retries > 0) {
+    try {
+      conn = await mysql.createConnection(DB_CONFIG);
+      break; // If successful, exit the loop
+    } catch (err: any) {
+      retries--;
+      console.log(`⚠️ Connection attempt failed, ${retries} retries remaining. Error: ${err.message}`);
+      
+      if (retries === 0) {
+        console.error('\n❌ Failed to connect to database after multiple attempts.');
+        process.exit(1);
+      }
+      
+      // Wait 5 seconds before retrying
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+  }
 
   try {
     for (const sql of MIGRATIONS) {
       const preview = sql.trim().slice(0, 60).replace(/\n/g, ' ')
       try {
-        await conn.execute(sql)
+        await conn!.execute(sql) // Using non-null assertion since if conn was null, we would have exited earlier
         console.log(`  ✓ ${preview}…`)
       } catch (err: any) {
         if (err.code === 'ER_DUP_FIELDNAME' || err.code === 'ER_DUP_KEYNAME' || err.errno === 1060 || err.errno === 1061) {
@@ -493,7 +525,9 @@ async function migrate() {
     console.error('\n❌ Migration failed:', err)
     process.exit(1)
   } finally {
-    await conn.end()
+    if (conn) {
+      await conn.end()
+    }
   }
 }
 

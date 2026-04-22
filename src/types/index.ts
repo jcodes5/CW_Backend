@@ -92,6 +92,7 @@ export interface LoginBody {
 
 export interface AuthRequest extends Request {
   user?: JWTPayload
+  permissions?: UserPermissions
 }
 
 // ── Product ───────────────────────────────────────────────────

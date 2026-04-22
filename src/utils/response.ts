@@ -59,3 +59,17 @@ export function conflict(res: Response, message: string): Response {
 export function serverError(res: Response, message = 'Internal server error'): Response {
   return res.status(500).json({ success: false, message })
 }
+
+export function sendResponse<T>(
+  res: Response,
+  statusCode: number,
+  success: boolean,
+  message: string,
+  data?: T
+): Response {
+  const body: any = { success, message }
+  if (data !== undefined) {
+    body.data = data
+  }
+  return res.status(statusCode).json(body)
+}

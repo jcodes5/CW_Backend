@@ -8,6 +8,7 @@ import {
 import { ok, created, paginated, badRequest, notFound, forbidden, serverError } from '@/utils/response'
 import { query } from '@/config/database'
 import { authenticate, requireAdmin } from '@/middleware/auth.middleware'
+import { requireSuperAdmin, requirePermission } from '@/middleware/role-permission.middleware'
 import {
   validate,
   registerValidators, loginValidators, forgotPasswordValidators,
@@ -17,6 +18,7 @@ import {
   adminReviewValidators, newsletterValidators,
 } from '@/middleware/validate.middleware'
 import type { AuthRequest } from '@/types'
+import adminRolesRouter from './admin-roles'
 
 // ── Type helper: Cast authenticated request handlers ──────────
 // Wraps handlers that expect AuthRequest and makes Express happy
@@ -223,35 +225,40 @@ const admin = Router()
 
 admin.use(authenticate, requireAdmin) // Fixed: This middleware is now correctly applied
 
+// Role Management Routes (nested under /roles)
+admin.use('/roles', adminRolesRouter)
+
+// ── Super Admin Only Routes ───────────────────────────────────
 // Dashboard
-admin.get('/dashboard',                h(adminController.getDashboard))
-admin.get('/analytics',               h(adminController.getAnalytics))
+admin.get('/dashboard',                requireSuperAdmin, h(adminController.getDashboard))
+admin.get('/analytics',               requireSuperAdmin, h(adminController.getAnalytics))
 
-// Products
-admin.post  ('/products',              createProductValidators, validate, h(adminController.createProduct))
-admin.put   ('/products/:id',          h(adminController.updateProduct))
-admin.delete('/products/:id',          h(adminController.deleteProduct))
-admin.post  ('/products/:id/images',   upload.array('images', 8), h(adminController.uploadProductImages))
+// Orders (Super Admin only)
+admin.get   ('/orders',                requireSuperAdmin, h(adminController.listOrders))
+admin.patch ('/orders/:reference/status', requireSuperAdmin, h(adminController.updateOrderStatus))
 
-// Orders
-admin.get   ('/orders',                h(adminController.listOrders))
-admin.patch ('/orders/:reference/status', h(adminController.updateOrderStatus))
+// Users (Super Admin only)
+admin.get   ('/users',                 requireSuperAdmin, h(adminController.listUsers))
 
-// Users
-admin.get   ('/users',                 h(adminController.listUsers))
+// Reviews (Super Admin only)
+admin.get   ('/reviews',               requireSuperAdmin, h(adminController.listReviews))
+admin.patch ('/reviews/:reviewId/verify', requireSuperAdmin, adminReviewValidators, validate, h(adminController.updateReviewVerification))
+admin.delete('/reviews/:reviewId',      requireSuperAdmin, h(adminController.deleteReview))
 
-// Reviews
-admin.get   ('/reviews',               h(adminController.listReviews))
-admin.patch ('/reviews/:reviewId/verify', adminReviewValidators, validate, h(adminController.updateReviewVerification))
-admin.delete('/reviews/:reviewId',      h(adminController.deleteReview))
+// Hero Images (Super Admin only)
+admin.get   ('/hero-images',                requireSuperAdmin, h(adminController.listHeroImages))
+admin.get   ('/hero-images/:id',           requireSuperAdmin, h(adminController.getHeroImageById))
+admin.post  ('/hero-images',               requireSuperAdmin, upload.single('image'), h(adminController.createHeroImage))
+admin.put   ('/hero-images/:id',           requireSuperAdmin, upload.single('image'), h(adminController.updateHeroImage))
+admin.delete('/hero-images/:id',           requireSuperAdmin, h(adminController.deleteHeroImage))
+admin.post  ('/hero-images/reorder',       requireSuperAdmin, h(adminController.reorderHeroImages))
 
-// Hero Images
-admin.get   ('/hero-images',                h(adminController.listHeroImages))
-admin.get   ('/hero-images/:id',           h(adminController.getHeroImageById))
-admin.post  ('/hero-images',               upload.single('image'), h(adminController.createHeroImage))
-admin.put   ('/hero-images/:id',           upload.single('image'), h(adminController.updateHeroImage))
-admin.delete('/hero-images/:id',           h(adminController.deleteHeroImage))
-admin.post  ('/hero-images/reorder',       h(adminController.reorderHeroImages))
+// ── Product Routes (Restricted/Permission-based) ──────────────
+// Products: Add, Edit, View Stock (restricted admin can do these)
+admin.post  ('/products',              requirePermission('canAddProducts'), createProductValidators, validate, h(adminController.createProduct))
+admin.put   ('/products/:id',          requirePermission('canEditProducts'), h(adminController.updateProduct))
+admin.delete('/products/:id',          requireSuperAdmin, h(adminController.deleteProduct))
+admin.post  ('/products/:id/images',   requirePermission('canEditProducts'), upload.array('images', 8), h(adminController.uploadProductImages))
 
 router.use('/admin', admin)
 
@@ -575,41 +582,41 @@ router.post('/admin/orders/:reference/tracking', authenticate, requireAdmin, h(a
 }))
 
 // ═══════════════════════════════════════════════════════════════
-// ADMIN: COUPONS  /api/v1/admin/coupons
+// ADMIN: COUPONS  /api/v1/admin/coupons (Super Admin only)
 // ═══════════════════════════════════════════════════════════════
-admin.get('/coupons', async (req: Request, res: Response) => {
+admin.get('/coupons', requireSuperAdmin, async (req: Request, res: Response) => {
   const { page, limit } = getPaginationLocal(req)
   const { rows, total } = await CouponModel.listCoupons(page, limit)
   paginated(res, rows.map(CouponModel.toCouponDTO), total, page, limit)
 })
 
-admin.post('/coupons', async (req: Request, res: Response) => {
+admin.post('/coupons', requireSuperAdmin, async (req: Request, res: Response) => {
   const { code, type, value, minOrderAmount, maxUses, expiresAt } = req.body
   if (!code || !type || !value) { badRequest(res, 'code, type, value are required'); return }
   const coupon = await CouponModel.createCoupon({ code, type, value, minOrderAmount, maxUses, expiresAt })
   created(res, CouponModel.toCouponDTO(coupon), 'Coupon created')
 })
 
-admin.patch('/coupons/:id', async (req: Request, res: Response) => {
+admin.patch('/coupons/:id', requireSuperAdmin, async (req: Request, res: Response) => {
   await CouponModel.updateCoupon(req.params.id as string, req.body)
   ok(res, null, 'Coupon updated')
 })
 
-admin.delete('/coupons/:id', async (req: Request, res: Response) => {
+admin.delete('/coupons/:id', requireSuperAdmin, async (req: Request, res: Response) => {
   await CouponModel.deleteCoupon(req.params.id as string)
   ok(res, null, 'Coupon deleted')
 })
 
 // ═══════════════════════════════════════════════════════════════
-// ADMIN: DIY VIDEOS  /api/v1/admin/diy
+// ADMIN: DIY VIDEOS  /api/v1/admin/diy (Super Admin only)
 // ═══════════════════════════════════════════════════════════════
-admin.get('/diy', async (req: Request, res: Response) => {
+admin.get('/diy', requireSuperAdmin, async (req: Request, res: Response) => {
   const { page, limit } = getPaginationLocal(req)
   const { rows, total } = await DiyModel.listAll(page, limit)
   paginated(res, rows.map(DiyModel.toDiyDTO), total, page, limit)
 })
 
-admin.post('/diy', authenticate, h(async (req: AuthRequest, res: Response) => {
+admin.post('/diy', requireSuperAdmin, h(async (req: AuthRequest, res: Response) => {
   const { title, description, youtubeId, thumbnail, duration, category, brandId, tags, sortOrder } = req.body
   if (!title || !youtubeId) { badRequest(res, 'title and youtubeId are required'); return }
   const video = await DiyModel.createVideo({
@@ -621,21 +628,21 @@ admin.post('/diy', authenticate, h(async (req: AuthRequest, res: Response) => {
   created(res, DiyModel.toDiyDTO(video), 'DIY video created')
 }))
 
-admin.put('/diy/:id', async (req: Request, res: Response) => {
+admin.put('/diy/:id', requireSuperAdmin, async (req: Request, res: Response) => {
   const video = await DiyModel.updateVideo(req.params.id as string, req.body)
   if (!video) { notFound(res, 'Video not found'); return }
   ok(res, DiyModel.toDiyDTO(video), 'Video updated')
 })
 
-admin.delete('/diy/:id', async (req: Request, res: Response) => {
+admin.delete('/diy/:id', requireSuperAdmin, async (req: Request, res: Response) => {
   await DiyModel.deleteVideo(req.params.id as string)
   ok(res, null, 'Video deleted')
 })
 
 // ═══════════════════════════════════════════════════════════════
-// ADMIN: REWARDS OVERVIEW
+// ADMIN: REWARDS OVERVIEW (Super Admin only)
 // ═══════════════════════════════════════════════════════════════
-admin.get('/rewards/overview', async (_req: Request, res: Response) => {
+admin.get('/rewards/overview', requireSuperAdmin, async (_req: Request, res: Response) => {
   const [totals, topEarners] = await Promise.all([
     query<{ total_users: number; total_points: number }>(
       'SELECT COUNT(*) AS total_users, COALESCE(SUM(points), 0) AS total_points FROM user_rewards'

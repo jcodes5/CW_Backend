@@ -420,6 +420,54 @@ const MIGRATIONS: string[] = [
   `ALTER TABLE orders ADD COLUMN webhook_processed_at DATETIME NULL AFTER webhook_event_id`,
   `CREATE INDEX idx_webhook_event ON orders (webhook_event_id)`,
   `CREATE INDEX idx_webhook_processed ON orders (webhook_processed_at)`,
+
+  // ── RBAC System (Super Admin + Admin Roles) ───────────────────
+  // Modify users table to support super_admin and admin roles
+  `ALTER TABLE users MODIFY COLUMN role ENUM('customer','admin','vendor','super_admin') NOT NULL DEFAULT 'customer'`,
+
+  // Create user_permissions table for granular permission control
+  `CREATE TABLE IF NOT EXISTS user_permissions (
+    user_id                   CHAR(36)   NOT NULL PRIMARY KEY,
+    can_add_products          TINYINT(1) NOT NULL DEFAULT 0,
+    can_edit_products         TINYINT(1) NOT NULL DEFAULT 0,
+    can_view_stock            TINYINT(1) NOT NULL DEFAULT 0,
+    can_manage_transactions   TINYINT(1) NOT NULL DEFAULT 0,
+    can_manage_orders         TINYINT(1) NOT NULL DEFAULT 0,
+    can_manage_users          TINYINT(1) NOT NULL DEFAULT 0,
+    can_manage_reviews        TINYINT(1) NOT NULL DEFAULT 0,
+    can_manage_coupons        TINYINT(1) NOT NULL DEFAULT 0,
+    can_manage_diy            TINYINT(1) NOT NULL DEFAULT 0,
+    can_manage_hero           TINYINT(1) NOT NULL DEFAULT 0,
+    is_super_admin_override   TINYINT(1) NOT NULL DEFAULT 0,
+    created_at                DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at                DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_perms (user_id),
+    INDEX idx_override (is_super_admin_override)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+  // Note: Admin count (max 5) and super_admin (max 1) validation is enforced at application level
+  // in the role-permission service. This prevents data inconsistency and allows flexible business logic updates.
+
+  // Convert all existing admins to super_admin (if any exist)
+  `UPDATE users SET role = 'super_admin' WHERE role = 'admin'`,
+
+  // Initialize permissions for all super_admin users (full access)
+  `INSERT INTO user_permissions (
+    user_id,
+    can_add_products,
+    can_edit_products,
+    can_view_stock,
+    can_manage_transactions,
+    can_manage_orders,
+    can_manage_users,
+    can_manage_reviews,
+    can_manage_coupons,
+    can_manage_diy,
+    can_manage_hero,
+    is_super_admin_override
+  ) SELECT id, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 FROM users WHERE role = 'super_admin'
+  ON DUPLICATE KEY UPDATE is_super_admin_override = 1`,
 ]
 
 async function migrate() {

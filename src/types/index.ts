@@ -1,7 +1,7 @@
 import type { Request } from 'express'
 
 // ── Auth / User ───────────────────────────────────────────────
-export type UserRole = 'customer' | 'admin' | 'vendor'
+export type UserRole = 'customer' | 'admin' | 'super_admin' | 'vendor'
 
 export interface User {
   id: string
@@ -38,6 +38,37 @@ export interface JWTPayload {
   userId: string
   email: string
   role: UserRole
+}
+
+// ── Permissions ───────────────────────────────────────────────
+export interface UserPermissions {
+  userId: string
+  canAddProducts: boolean
+  canEditProducts: boolean
+  canViewStock: boolean
+  canManageTransactions: boolean
+  canManageOrders: boolean
+  canManageUsers: boolean
+  canManageReviews: boolean
+  canManageCoupons: boolean
+  canManageDiy: boolean
+  canManageHero: boolean
+  isSuperAdminOverride: boolean
+}
+
+export interface UserPermissionsRow {
+  user_id: string
+  can_add_products: number
+  can_edit_products: number
+  can_view_stock: number
+  can_manage_transactions: number
+  can_manage_orders: number
+  can_manage_users: number
+  can_manage_reviews: number
+  can_manage_coupons: number
+  can_manage_diy: number
+  can_manage_hero: number
+  is_super_admin_override: number
 }
 
 export interface TokenPair {

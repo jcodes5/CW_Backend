@@ -60,5 +60,5 @@ export function requireRole(...roles: UserRole[]) {
 }
 
 // ── Convenience role guards ───────────────────────────────────
-export const requireAdmin  = requireRole('admin')
-export const requireVendor = requireRole('admin', 'vendor')
+export const requireAdmin  = requireRole('admin', 'super_admin')
+export const requireVendor = requireRole('admin', 'vendor', 'super_admin')

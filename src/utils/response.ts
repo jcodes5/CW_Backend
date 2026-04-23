@@ -10,7 +10,7 @@ export function created<T>(res: Response, data: T, message = 'Created'): Respons
   return ok(res, data, message, 201)
 }
 
-export function noContent(res: Response): Response {
+export function noContent(res: Response, p0: string): Response {
   return res.status(204).send()
 }
 

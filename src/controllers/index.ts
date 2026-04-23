@@ -2,7 +2,6 @@
  * CraftworldCentre — Controllers
  * Each controller is a thin layer: validate request → call model/service → send response
  */
-
 import type { Request, Response } from 'express'
 import type { AuthRequest, JWTPayload } from '@/types'
 import * as AuthModel    from '@/models/auth.model'
@@ -1029,98 +1028,139 @@ export const addressController = {
   },
 
   async create(req: AuthRequest, res: Response): Promise<void> {
-    const id     = uuidv4()
+    const id = uuidv4();
+    const userId = req.user!.userId;
+    const {
+      label, firstName, lastName, email, phone, addressLine1, addressLine2, city, state, country, isDefault: inputIsDefault,
+    } = req.body;
+
+    // Determine if this should be the default address
+    let isDefault: boolean | undefined = inputIsDefault === undefined
+      ? undefined
+      : Boolean(inputIsDefault);
+
+    // If explicitly set to true, unmark other defaults
+    if (isDefault === true) {
+      await execute('UPDATE addresses SET is_default = 0 WHERE user_id = ?', [userId]);
+    } else if (isDefault === undefined) {
+      // If not provided, check if no default exists
+      const existingDefault = await queryOne(
+        'SELECT id FROM addresses WHERE user_id = ? AND is_default = 1',
+        [userId]
+      );
+      isDefault = !existingDefault;
+    }
+
+    const addressData = {
+      user_id: userId,
+      label,
+      first_name: firstName,
+      last_name: lastName,
+      email,
+      phone,
+      address_line1: addressLine1,
+      address_line2: addressLine2,
+      city,
+      state,
+      country,
+      is_default: isDefault ? 1 : 0,
+    };
+
+    await execute(
+      `INSERT INTO addresses (
+        id, user_id, label, first_name, last_name, email, phone,
+        address_line1, address_line2, city, state, country, is_default, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        id, addressData.user_id, addressData.label, addressData.first_name, addressData.last_name,
+        addressData.email, addressData.phone, addressData.address_line1, addressData.address_line2,
+        addressData.city, addressData.state, addressData.country, addressData.is_default,
+      ]
+    );
+
+    created(res, { id, ...addressData }, 'Address created')
+  },
+  
+  // ─────────────────────────────────────────────────────────────
+  // OTHER ADDRESS FUNCTIONS
+  // ─────────────────────────────────────────────────────────────
+  async update(req: AuthRequest, res: Response): Promise<void> {
+    const { addressId } = req.params
     const userId = req.user!.userId
     const {
-      label, firstName, lastName, email, phone, addressLine1,
-      addressLine2, city, state, postalCode, country, isDefault, deliveryNotes,
+      label, firstName, lastName, email, phone, addressLine1, addressLine2, city, state, country, isDefault,
     } = req.body
 
-    // If setting as default, unset others first
+    // Fetch existing address
+    const existing = await queryOne<{
+      [x: string]: anyuser_id: string
+}>('SELECT * FROM addresses WHERE id = ?', [addressId])
+    if (!existing) { notFound(res, 'Address not found'); return }
+    if (existing.user_id !== userId) { forbidden(res, 'Not authorized'); return }
+
+    // If setting as default, unmark other defaults first
     if (isDefault) {
       await execute('UPDATE addresses SET is_default = 0 WHERE user_id = ?', [userId])
     }
 
-    // First address is always default
-    const [count] = await query<{ c: number }>(
-      'SELECT COUNT(*) AS c FROM addresses WHERE user_id = ?', [userId]
-    )
-    const shouldBeDefault = isDefault || (count?.c ?? 0) === 0
-
-    await execute(
-      `INSERT INTO addresses
-       (id, user_id, label, first_name, last_name, email, phone,
-        address_line1, address_line2, city, state, postal_code, country,
-        is_default, delivery_notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, userId, label ?? 'Home', firstName, lastName, email, phone,
-        addressLine1, addressLine2 ?? null, city, state, postalCode ?? null,
-        country ?? 'Nigeria', shouldBeDefault ? 1 : 0, deliveryNotes ?? null,
-      ]
-    )
-
-    const address = await queryOne('SELECT * FROM addresses WHERE id = ?', [id])
-    created(res, address, 'Address saved')
-  },
-
-  async update(req: AuthRequest, res: Response): Promise<void> {
-    const { id } = req.params
-    const addr   = await queryOne<{ user_id: string }>(
-      'SELECT user_id FROM addresses WHERE id = ?', [id]
-    )
-    if (!addr || addr.user_id !== req.user!.userId) { notFound(res, 'Address not found'); return }
-
-    const {
-      label, firstName, lastName, email, phone, addressLine1,
-      addressLine2, city, state, postalCode, country, isDefault, deliveryNotes,
-    } = req.body
-
-    if (isDefault) {
-      await execute('UPDATE addresses SET is_default = 0 WHERE user_id = ?', [req.user!.userId])
+    const updatedData = {
+      label,
+      first_name: firstName,
+      last_name: lastName,
+      email,
+      phone,
+      address_line1: addressLine1,
+      address_line2: addressLine2,
+      city,
+      state,
+      country,
+      is_default: typeof isDefault !== 'undefined' ? (isDefault ? 1 : 0) : existing.is_default,
     }
 
     await execute(
-      `UPDATE addresses SET
-       label = COALESCE(?, label), first_name = COALESCE(?, first_name),
-       last_name = COALESCE(?, last_name), email = COALESCE(?, email),
-       phone = COALESCE(?, phone), address_line1 = COALESCE(?, address_line1),
-       address_line2 = ?, city = COALESCE(?, city), state = COALESCE(?, state),
-       postal_code = ?, country = COALESCE(?, country),
-       is_default = COALESCE(?, is_default), delivery_notes = ?
-       WHERE id = ? AND user_id = ?`,
+      `UPDATE addresses SET label = ?, first_name = ?, last_name = ?, email = ?, phone = ?,
+        address_line1 = ?, address_line2 = ?, city = ?, state = ?, country = ?, is_default = ?, updated_at = NOW()
+        WHERE id = ?`,
       [
-        label ?? null, firstName ?? null, lastName ?? null, email ?? null, phone ?? null,
-        addressLine1 ?? null, addressLine2 ?? null, city ?? null, state ?? null,
-        postalCode ?? null, country ?? null, isDefault != null ? (isDefault ? 1 : 0) : null,
-        deliveryNotes ?? null, id, req.user!.userId,
+        updatedData.label, updatedData.first_name, updatedData.last_name, updatedData.email, updatedData.phone,
+        updatedData.address_line1, updatedData.address_line2, updatedData.city, updatedData.state, 
+        updatedData.country, updatedData.is_default, addressId
       ]
     )
 
-    const updated = await queryOne('SELECT * FROM addresses WHERE id = ?', [id])
-    ok(res, updated, 'Address updated')
+    // Retrieve updated address
+    const updatedAddress = await queryOne('SELECT * FROM addresses WHERE id = ?', [addressId])
+
+    ok(res, updatedAddress, 'Address updated successfully')
+  },
+
+  async setDefault(req: AuthRequest, res: Response): Promise<void> {
+    const { addressId } = req.params
+    const userId = req.user!.userId
+
+    // Verify ownership
+    const address = await queryOne<{ user_id: string }>('SELECT * FROM addresses WHERE id = ?', [addressId])
+    if (!address) { notFound(res, 'Address not found'); return }
+    if (address.user_id !== userId) { forbidden(res, 'Not authorized'); return }
+
+    // Update: Unmark current default, mark new default
+    await execute('UPDATE addresses SET is_default = 0 WHERE user_id = ?', [userId])
+    await execute('UPDATE addresses SET is_default = 1 WHERE id = ? AND user_id = ?', [addressId, userId])
+
+    ok(res, null, 'Default address updated')
   },
 
   async delete(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params
-    const result = await execute(
-      'DELETE FROM addresses WHERE id = ? AND user_id = ?',
-      [id, req.user!.userId]
-    )
-    if (result.affectedRows === 0) { notFound(res, 'Address not found'); return }
-    noContent(res)
-  },
+    const userId = req.user!.userId
 
-  async setDefault(req: AuthRequest, res: Response): Promise<void> {
-    const { id } = req.params
-    const addr = await queryOne<{ user_id: string }>(
-      'SELECT user_id FROM addresses WHERE id = ?', [id]
-    )
-    if (!addr || addr.user_id !== req.user!.userId) { notFound(res, 'Address not found'); return }
+    const address = await queryOne<{ user_id: string }>('SELECT user_id FROM addresses WHERE id = ?', [id])
+    if (!address) { notFound(res, 'Address not found'); return }
+    if (address.user_id !== userId) { forbidden(res, 'Not authorized'); return }
 
-    await execute('UPDATE addresses SET is_default = 0 WHERE user_id = ?', [req.user!.userId])
-    await execute('UPDATE addresses SET is_default = 1 WHERE id = ?', [id])
-    ok(res, null, 'Default address updated')
+    await execute('DELETE FROM addresses WHERE id = ? AND user_id = ?', [id, userId])
+
+    noContent(res, 'Address deleted')
   },
 }
 
@@ -1224,7 +1264,7 @@ export const adminController = {
   // Dashboard stats
   async getDashboard(_req: Request, res: Response): Promise<void> {
     const [
-      ordersToday, totalRevenue, newUsers, lowStock, recentOrders, topProducts,
+      ordersToday, totalRevenue, newUsers, lowStock, recentOrdersRaw, topProducts,
     ] = await Promise.all([
       query<{ count: number; revenue: number }>(
         `SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS revenue
@@ -1242,8 +1282,14 @@ export const adminController = {
         'SELECT COUNT(*) AS count FROM products WHERE stock <= 5 AND is_active = 1'
       ),
       query(
-        `SELECT o.*, u.first_name, u.last_name, u.email
+        `SELECT o.id, o.reference, o.status,
+                o.subtotal, o.delivery_fee, o.discount, o.total,
+                o.payment_method, o.payment_channel, 
+                o.shipping_address, o.estimated_delivery,
+                o.created_at, o.updated_at, 
+                u.first_name, u.last_name, u.email
          FROM orders o JOIN users u ON u.id = o.user_id
+         WHERE o.status != 'cart'
          ORDER BY o.created_at DESC LIMIT 10`
       ),
       query<{
@@ -1270,6 +1316,17 @@ export const adminController = {
          ORDER BY units_sold DESC LIMIT 5`
       ),
     ])
+
+    // Format the recent orders to match the expected frontend structure
+    const recentOrders = recentOrdersRaw.map(order => ({
+      ...order,
+      pricing: {
+        subtotal: parseFloat(order.subtotal) || 0,
+        deliveryFee: parseFloat(order.delivery_fee) || 0,
+        discount: parseFloat(order.discount) || 0,
+        total: parseFloat(order.total) || 0
+      }
+    }));
 
     ok(res, {
       today:        { orders: ordersToday[0]?.count ?? 0, revenue: ordersToday[0]?.revenue ?? 0 },

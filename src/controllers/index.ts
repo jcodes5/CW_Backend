@@ -1092,9 +1092,7 @@ export const addressController = {
     } = req.body
 
     // Fetch existing address
-    const existing = await queryOne<{
-      [x: string]: anyuser_id: string
-}>('SELECT * FROM addresses WHERE id = ?', [addressId])
+    const existing = await queryOne<{ user_id: string; is_default: number }>('SELECT * FROM addresses WHERE id = ?', [addressId])
     if (!existing) { notFound(res, 'Address not found'); return }
     if (existing.user_id !== userId) { forbidden(res, 'Not authorized'); return }
 
@@ -1318,7 +1316,7 @@ export const adminController = {
     ])
 
     // Format the recent orders to match the expected frontend structure
-    const recentOrders = recentOrdersRaw.map(order => ({
+    const recentOrders = recentOrdersRaw.map((order: any) => ({
       ...order,
       pricing: {
         subtotal: parseFloat(order.subtotal) || 0,

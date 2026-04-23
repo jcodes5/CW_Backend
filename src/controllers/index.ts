@@ -1591,10 +1591,21 @@ export const adminController = {
   // Admin product CRUD
   async createProduct(req: AuthRequest, res: Response): Promise<void> {
     const { name, description, price, comparePrice, categoryId, brandId, stock, tags, isFeatured, isNew } = req.body
+    const files = req.files as Express.Multer.File[]
+
+    let imageUrls: string[] = []
+    if (files?.length) {
+      const results = await cloudinaryService.uploadMultiple(
+        files.map((f) => f.buffer),
+        'products'
+      )
+      imageUrls = results.map((r) => r.url)
+    }
+
     const product = await ProductModel.createProduct({
       name, description, price: Number(price),
       comparePrice: comparePrice ? Number(comparePrice) : undefined,
-      images: [], categoryId, brandId,
+      images: imageUrls, categoryId, brandId,
       stock: Number(stock), tags: tags ?? [],
       isFeatured: Boolean(isFeatured), isNew: Boolean(isNew),
     })

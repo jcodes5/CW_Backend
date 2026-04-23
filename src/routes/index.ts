@@ -255,7 +255,7 @@ admin.post  ('/hero-images/reorder',       requireSuperAdmin, h(adminController.
 
 // ── Product Routes (Restricted/Permission-based) ──────────────
 // Products: Add, Edit, View Stock (restricted admin can do these)
-admin.post  ('/products',              requirePermission('canAddProducts'), createProductValidators, validate, h(adminController.createProduct))
+admin.post  ('/products',              requirePermission('canAddProducts'), upload.array('images', 8), createProductValidators, validate, h(adminController.createProduct))
 admin.put   ('/products/:id',          requirePermission('canEditProducts'), h(adminController.updateProduct))
 admin.delete('/products/:id',          requireSuperAdmin, h(adminController.deleteProduct))
 admin.post  ('/products/:id/images',   requirePermission('canEditProducts'), upload.array('images', 8), h(adminController.uploadProductImages))

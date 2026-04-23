@@ -498,8 +498,8 @@ export const orderController = {
     const order = await OrderModel.getOrderWithItems(req.params.reference as string)
     if (!order) { notFound(res, 'Order not found'); return }
 
-    // Non-admins can only see their own orders
-    if (req.user!.role !== 'admin' && order.user_id !== req.user!.userId) {
+    // Only super_admin can view any order; customers can only see their own
+    if (req.user!.role !== 'super_admin' && order.user_id !== req.user!.userId) {
       forbidden(res)
       return
     }

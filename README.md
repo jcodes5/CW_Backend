@@ -211,10 +211,3 @@ npm run test:coverage   # With coverage report
 
 ---
 
-## Default Admin Credentials
-```
-Email:    admin@craftworldcentre.com   (or your ADMIN_EMAIL env var)
-Password: AdminSecureP@ss123           (or your ADMIN_PASSWORD env var)
-```
-⚠️ Change these immediately in production.
-# CW_Backend

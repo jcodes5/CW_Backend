@@ -85,6 +85,18 @@ export async function sendWelcomeEmail(to: string, firstName: string, verifyToke
   `))
 }
 
+// ── OAuth welcome email ──────────────────────────────────────
+export async function sendOAuthWelcomeEmail(to: string, firstName: string): Promise<void> {
+  await send(to, 'Welcome to CraftworldCentre 🌿', emailShell(`
+    <h2>Welcome, ${firstName}! 🎉</h2>
+    <p>You've successfully signed up for CraftworldCentre using your Google account. Your email has been verified and your account is ready to use!</p>
+    <p>Start exploring our circular economy marketplace — every purchase helps divert waste from landfills and supports local artisans.</p>
+    <div style="text-align:center"><a class="btn" href="${FE_URL}">Start Shopping</a></div>
+    <hr class="divider" />
+    <p>If you have any questions, feel free to contact our support team.</p>
+  `))
+}
+
 // ── Password reset email ──────────────────────────────────────
 export async function sendPasswordResetEmail(to: string, firstName: string, resetToken: string): Promise<void> {
   const resetUrl = `${FE_URL}/reset-password?token=${resetToken}`
@@ -213,6 +225,7 @@ export async function sendNewsletterWelcomeEmail(to: string): Promise<void> {
 
 export const emailService = {
   sendWelcomeEmail,
+  sendOAuthWelcomeEmail,
   sendPasswordResetEmail,
   sendOrderConfirmationEmail,
   sendOrderStatusEmail,

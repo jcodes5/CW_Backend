@@ -1,8 +1,9 @@
 import passport from 'passport'
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20'
 import { Strategy as FacebookStrategy } from 'passport-facebook'
-import { findByProvider, findByEmail, createOAuthUser, updateLastLogin } from '@/models/auth.model'
+import { findByProvider, findByEmail, findById, createOAuthUser, updateLastLogin } from '@/models/auth.model'
 import { execute } from '@/config/database'
+import { sendOAuthWelcomeEmail } from '@/services/email.service'
 
 // ── Google OAuth Strategy ──────────────────────────────────────
 passport.use(
@@ -48,7 +49,9 @@ passport.use(
           }
 
           await updateLastLogin(existingUser.id)
-          return done(null, { ...existingUser, provider: 'google', provider_id: profile.id })
+          // Refetch user to get updated verification status
+          const updatedUser = await findById(existingUser.id)
+          return done(null, { ...updatedUser, provider: 'google', provider_id: profile.id })
         }
 
         // Create new OAuth user
@@ -62,6 +65,10 @@ passport.use(
         })
 
         await updateLastLogin(user.id)
+
+        // Send welcome email for new OAuth users
+        sendOAuthWelcomeEmail(user.email, user.first_name).catch(() => {})
+
         return done(null, user)
       } catch (err) {
         return done(err)
@@ -115,7 +122,9 @@ passport.use(
           }
 
           await updateLastLogin(existingUser.id)
-          return done(null, { ...existingUser, provider: 'facebook', provider_id: profile.id })
+          // Refetch user to get updated verification status
+          const updatedUser = await findById(existingUser.id)
+          return done(null, { ...updatedUser, provider: 'facebook', provider_id: profile.id })
         }
 
         // Create new OAuth user
@@ -129,6 +138,10 @@ passport.use(
         })
 
         await updateLastLogin(user.id)
+
+        // Send welcome email for new OAuth users
+        sendOAuthWelcomeEmail(user.email, user.first_name).catch(() => {})
+
         return done(null, user)
       } catch (err) {
         return done(err)

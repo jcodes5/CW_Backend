@@ -1590,7 +1590,7 @@ export const adminController = {
 
   // Admin product CRUD
   async createProduct(req: AuthRequest, res: Response): Promise<void> {
-    const { name, description, price, comparePrice, categoryId, brandId, stock, tags, isFeatured, isNew } = req.body
+    const { name, description, price, comparePrice, specifications, categoryId, brandId, stock, tags, isFeatured, isNew } = req.body
     const files = req.files as Express.Multer.File[]
 
     let imageUrls: string[] = []
@@ -1605,7 +1605,7 @@ export const adminController = {
     const product = await ProductModel.createProduct({
       name, description, price: Number(price),
       comparePrice: comparePrice ? Number(comparePrice) : undefined,
-      images: imageUrls, categoryId, brandId,
+      images: imageUrls, specifications, categoryId, brandId,
       stock: Number(stock), tags: tags ?? [],
       isFeatured: Boolean(isFeatured), isNew: Boolean(isNew),
     })

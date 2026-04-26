@@ -256,8 +256,8 @@ export function toProductDTO(row: ProductRow) {
     description:  row.description,
     price:        Number(row.price),
     comparePrice: row.compare_price ? Number(row.compare_price) : undefined,
-    images:       typeof row.images === 'string' ? JSON.parse(row.images) : row.images,
-    specifications: typeof row.specifications === 'string' ? JSON.parse(row.specifications) : (row.specifications || {}),
+    images:       parseImagesField(row.images),
+    specifications: typeof row.specifications === 'string' ? safelyParseJSON(row.specifications, {}) : (row.specifications || {}),
     category: {
       id:   row.category_id,
       name: row.category_name ?? '',
@@ -271,11 +271,33 @@ export function toProductDTO(row: ProductRow) {
       accentColor: row.brand_accent_color ?? '#7BC8D8',
     },
     stock:       row.stock,
-    tags:        typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags,
+    tags:        typeof row.tags === 'string' ? safelyParseJSON(row.tags, []) : row.tags,
     rating:      Number(row.rating),
     reviewCount: row.review_count,
     isNew:       row.is_new === 1,
     isFeatured:  row.is_featured === 1,
     createdAt:   row.created_at,
+  }
+}
+
+function parseImagesField(images: any): string[] {
+  if (typeof images === 'string') {
+    try {
+      const parsed = JSON.parse(images);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.error('Error parsing images field:', error);
+      return [];
+    }
+  }
+  return Array.isArray(images) ? images : (images || []);
+}
+
+function safelyParseJSON(jsonString: string, defaultValue: any) {
+  try {
+    return JSON.parse(jsonString);
+  } catch (error) {
+    console.error('Error parsing JSON field:', error);
+    return defaultValue;
   }
 }

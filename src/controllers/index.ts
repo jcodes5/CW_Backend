@@ -1594,6 +1594,9 @@ export const adminController = {
     const files = req.files as Express.Multer.File[]
 
     logger.info(`Creating product "${name}" with ${files?.length || 0} images`)
+    logger.info(`Request content-type: ${req.headers['content-type']}`)
+    logger.info(`Request body keys: ${Object.keys(req.body).join(', ')}`)
+    logger.info(`Files received: ${files ? files.length : 'undefined'}`)
 
     let imageUrls: string[] = []
     if (files?.length) {

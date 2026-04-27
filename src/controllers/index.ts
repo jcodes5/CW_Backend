@@ -1593,13 +1593,24 @@ export const adminController = {
     const { name, description, price, comparePrice, specifications, categoryId, brandId, stock, tags, isFeatured, isNew } = req.body
     const files = req.files as Express.Multer.File[]
 
+    logger.info(`Creating product "${name}" with ${files?.length || 0} images`)
+
     let imageUrls: string[] = []
     if (files?.length) {
-      const results = await cloudinaryService.uploadMultiple(
-        files.map((f) => f.buffer),
-        'products'
-      )
-      imageUrls = results.map((r) => r.url)
+      try {
+        logger.info(`Uploading ${files.length} images to Cloudinary...`)
+        const results = await cloudinaryService.uploadMultiple(
+          files.map((f) => f.buffer),
+          'products'
+        )
+        imageUrls = results.map((r) => r.url)
+        logger.info(`Successfully uploaded ${imageUrls.length} images:`, imageUrls)
+      } catch (error) {
+        logger.error('Failed to upload images to Cloudinary:', error)
+        // Continue creating product without images
+      }
+    } else {
+      logger.info('No images provided for product')
     }
 
     const product = await ProductModel.createProduct({
@@ -1609,6 +1620,8 @@ export const adminController = {
       stock: Number(stock), tags: tags ?? [],
       isFeatured: Boolean(isFeatured), isNew: Boolean(isNew),
     })
+
+    logger.info(`Product created with ID ${product.id}, images:`, product.images)
     created(res, ProductModel.toProductDTO(product), 'Product created')
   },
 

@@ -258,6 +258,7 @@ export function toProductDTO(row: ProductRow) {
     description:  row.description,
     price:        Number(row.price),
     comparePrice: row.compare_price ? Number(row.compare_price) : undefined,
+    weightKg:     Number(row.weight_kg) || 0.5,
     images:       parseImagesField(row.images),
     specifications: typeof row.specifications === 'string' ? safelyParseJSON(row.specifications, {}) : (row.specifications || {}),
     category: {

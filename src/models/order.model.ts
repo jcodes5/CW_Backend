@@ -5,6 +5,7 @@ import { generateOrderReference } from '@/utils/crypto'
 import * as ProductModel from './product.model'
 import * as TrackingModel from './tracking.model'
 import * as RewardsModel  from './rewards.model'
+import { calculateSpeedafDeliveryFee } from '@/services/speedaf.service'
 
 export interface CreateOrderData {
   userId:  string
@@ -70,17 +71,18 @@ export async function createOrder(data: CreateOrderData): Promise<OrderRow> {
 
     // Calculate delivery fee
     const state        = (data.shippingAddress.state as string) ?? ''
+    const city         = (data.shippingAddress.city as string) ?? state
+    
     // Calculate total weight of items in the order
     let totalWeight = 0;
     for (const item of resolvedItems) {
-      // Assuming each product has a weight property, default to 1kg if not provided
-      // We would need to add weight to the product model, for now defaulting to 1kg per item
+      // Use weightKg from product snapshot
       const product = JSON.parse(item.snapshot);
-      const itemWeight = product.weight || 1; // Default to 1kg if weight not specified
+      const itemWeight = product.weightKg || 0.5; // Default to 0.5kg if weight not specified
       totalWeight += itemWeight * item.quantity;
     }
     
-    const deliveryFee  = getDeliveryFee(state, subtotal, totalWeight)
+    const deliveryFee  = getDeliveryFee(state, subtotal, totalWeight, city)
     const total        = subtotal + deliveryFee
 
     // Delivery estimate
@@ -372,7 +374,18 @@ export function toOrderDTO(order: OrderRow) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────
-function getDeliveryFee(state: string, subtotal: number, _totalWeight: number): number {
+function getDeliveryFee(state: string, subtotal: number, totalWeight: number, city?: string): number {
+  try {
+    // Try to use Speedaf pricing with weight calculation if city is available
+    if (city) {
+      const pricing = calculateSpeedafDeliveryFee(totalWeight, city, subtotal);
+      return Math.round(pricing.totalDeliveryFee);
+    }
+  } catch (err) {
+    // Fall back to static pricing if Speedaf service fails
+  }
+  
+  // Fallback to static state-based pricing
   if (subtotal >= 25000) return 0
   const feeMap: Record<string, number> = {
     Lagos: 2000, Ogun: 2500, Oyo: 3000, Osun: 3000, Ekiti: 3500,

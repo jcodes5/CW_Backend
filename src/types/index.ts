@@ -116,6 +116,7 @@ export interface ProductRow {
   is_new: number
   is_featured: number
   is_active: number
+  weight_kg: number       // Product weight in kg, mandatory for delivery calculation
   created_at: Date
   updated_at: Date
   // joined fields

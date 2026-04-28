@@ -177,7 +177,7 @@ export async function decrementStock(
 export async function createProduct(data: {
   name: string; description: string; price: number; comparePrice?: number
   images: string[]; specifications?: Record<string, string>; categoryId: string; brandId: string; stock: number
-  tags: string[]; isFeatured?: boolean; isNew?: boolean
+  weightKg?: number; tags: string[]; isFeatured?: boolean; isNew?: boolean
 }): Promise<ProductRow> {
   const id   = uuidv4()
   const slug = slugify(data.name)
@@ -185,14 +185,15 @@ export async function createProduct(data: {
   await execute(
     `INSERT INTO products
      (id, name, slug, description, price, compare_price, images, specifications, category_id, brand_id,
-      stock, tags, is_featured, is_new)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      stock, weight_kg, tags, is_featured, is_new)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, data.name, slug, data.description, data.price,
       data.comparePrice ?? null, JSON.stringify(data.images),
       data.specifications ? JSON.stringify(data.specifications) : null,
       data.categoryId, data.brandId, data.stock,
-      JSON.stringify(data.tags), data.isFeatured ? 1 : 0, data.isNew ? 1 : 0,
+      data.weightKg ?? 0.5, JSON.stringify(data.tags), 
+      data.isFeatured ? 1 : 0, data.isNew ? 1 : 0,
     ]
   )
 
@@ -205,7 +206,7 @@ export async function updateProduct(
   data: Partial<{
     name: string; description: string; price: number; comparePrice: number | null
     images: string[]; specifications: Record<string, string>; categoryId: string; brandId: string; stock: number
-    tags: string[]; isFeatured: boolean; isNew: boolean; isActive: boolean
+    weightKg: number; tags: string[]; isFeatured: boolean; isNew: boolean; isActive: boolean
   }>
 ): Promise<ProductRow | null> {
   const fields: string[] = []
@@ -220,6 +221,7 @@ export async function updateProduct(
   if (data.categoryId !== undefined)   { fields.push('category_id = ?');   values.push(data.categoryId)               }
   if (data.brandId !== undefined)      { fields.push('brand_id = ?');      values.push(data.brandId)                 }
   if (data.stock !== undefined)        { fields.push('stock = ?');          values.push(data.stock)                   }
+  if (data.weightKg !== undefined)     { fields.push('weight_kg = ?');     values.push(data.weightKg)                }
   if (data.tags !== undefined)         { fields.push('tags = ?');           values.push(JSON.stringify(data.tags))    }
   if (data.isFeatured !== undefined)   { fields.push('is_featured = ?');   values.push(data.isFeatured ? 1 : 0)       }
   if (data.isNew !== undefined)        { fields.push('is_new = ?');         values.push(data.isNew ? 1 : 0)           }

@@ -1590,7 +1590,7 @@ export const adminController = {
 
   // Admin product CRUD
   async createProduct(req: AuthRequest, res: Response): Promise<void> {
-    const { name, description, price, comparePrice, specifications, categoryId, brandId, stock, tags, isFeatured, isNew } = req.body
+    const { name, description, price, comparePrice, specifications, categoryId, brandId, stock, weightKg, tags, isFeatured, isNew } = req.body
     const files = req.files as Express.Multer.File[]
 
     logger.info(`Creating product "${name}" with ${files?.length || 0} images`)
@@ -1620,7 +1620,8 @@ export const adminController = {
       name, description, price: Number(price),
       comparePrice: comparePrice ? Number(comparePrice) : undefined,
       images: imageUrls, specifications, categoryId, brandId,
-      stock: Number(stock), tags: tags ?? [],
+      stock: Number(stock), weightKg: weightKg ? Number(weightKg) : 0.5,
+      tags: tags ?? [],
       isFeatured: Boolean(isFeatured), isNew: Boolean(isNew),
     })
 

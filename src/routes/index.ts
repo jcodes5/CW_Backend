@@ -371,6 +371,7 @@ wallet.post('/deposit/init', h(async (req: AuthRequest, res: Response) => {
         userId: req.user!.userId,
         amount: numAmount,
       },
+      callback_url: `${process.env.FRONTEND_URL}/wallet-deposit-callback?reference=${reference}`,
     })
     
     // 4. Send response with payment link

@@ -307,8 +307,14 @@ wallet.use(authenticate) // Fixed: This middleware is now correctly applied
 // Get wallet balance
 wallet.get('/', h(async (req: AuthRequest, res: Response) => {
   try {
-    const walletData = await WalletModel.getOrCreateWallet(req.user!.userId)
-    ok(res, WalletModel.toWalletDTO(walletData))
+    const walletData = await WalletModel.getWalletByUserId(req.user!.userId)
+    if (!walletData) {
+      // If wallet doesn't exist, create one
+      const newWallet = await WalletModel.getOrCreateWallet(req.user!.userId)
+      ok(res, WalletModel.toWalletDTO(newWallet))
+    } else {
+      ok(res, WalletModel.toWalletDTO(walletData))
+    }
   } catch (err) {
     serverError(res, err instanceof Error ? err.message : 'Failed to get wallet')
   }

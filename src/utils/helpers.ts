@@ -90,6 +90,22 @@ export function getDeliveryEstimate(state: string): string {
   })
 }
 
+// ── MySQL DateTime Formatting ────────────────────────────────
+/**
+ * Format a Date object or ISO string to MySQL DATETIME format (YYYY-MM-DD HH:MM:SS)
+ * Required because MySQL DATETIME doesn't support milliseconds or 'Z' suffix
+ */
+export function formatMySQLDateTime(date: Date | string = new Date()): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  const year   = d.getFullYear()
+  const month  = String(d.getMonth() + 1).padStart(2, '0')
+  const day    = String(d.getDate()).padStart(2, '0')
+  const hours  = String(d.getHours()).padStart(2, '0')
+  const mins   = String(d.getMinutes()).padStart(2, '0')
+  const secs   = String(d.getSeconds()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${mins}:${secs}`
+}
+
 export function getDeliveryFee(state: string, subtotal: number, weightInKg?: number): number {
   if (subtotal >= 25000) return 0
   

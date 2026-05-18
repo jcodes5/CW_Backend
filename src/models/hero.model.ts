@@ -5,6 +5,7 @@
 
 import { query, queryOne, execute } from '@/config/database'
 import { v4 as uuidv4 } from 'uuid'
+import { formatMySQLDateTime } from '@/utils/helpers'
 
 export interface HeroImage {
   id: string
@@ -66,7 +67,7 @@ export async function getHeroImageById(id: string): Promise<HeroImage | null> {
  */
 export async function createHeroImage(input: CreateHeroImageInput): Promise<HeroImage> {
   const id = uuidv4()
-  const now = new Date().toISOString()
+  const now = formatMySQLDateTime()
   const sort_order = input.sort_order ?? 999
 
   await execute(
@@ -124,7 +125,7 @@ export async function updateHeroImage(id: string, input: UpdateHeroImageInput): 
   }
 
   fields.push('updated_at = ?')
-  values.push(new Date().toISOString())
+  values.push(formatMySQLDateTime())
 
   values.push(id)
 
@@ -148,7 +149,7 @@ export async function deleteHeroImage(id: string): Promise<void> {
 
   await execute(
     'UPDATE hero_images SET is_active = 0, updated_at = ? WHERE id = ?',
-    [new Date().toISOString(), id]
+    [formatMySQLDateTime(), id]
   )
 }
 
@@ -169,7 +170,7 @@ export async function permanentlyDeleteHeroImage(id: string): Promise<void> {
  * Reorder hero images
  */
 export async function reorderHeroImages(order: Record<string, number>): Promise<void> {
-  const now = new Date().toISOString()
+  const now = formatMySQLDateTime()
   const updates = Object.entries(order).map(([id, sort_order]) =>
     execute(
       'UPDATE hero_images SET sort_order = ?, updated_at = ? WHERE id = ?',

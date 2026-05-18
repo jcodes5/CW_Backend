@@ -3,8 +3,9 @@ import type { JWTPayload, TokenPair } from '@/types'
 
 const ACCESS_SECRET  = process.env.JWT_ACCESS_SECRET  ?? 'dev_access_secret_change_in_prod'
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET ?? 'dev_refresh_secret_change_in_prod'
-const ACCESS_EXPIRES  = process.env.JWT_ACCESS_EXPIRES  ?? '15m'
-const REFRESH_EXPIRES = process.env.JWT_REFRESH_EXPIRES ?? '7d'
+// Increased from 15m to 2h to prevent premature session expiration during long product additions
+const ACCESS_EXPIRES  = process.env.JWT_ACCESS_EXPIRES  ?? '2h'
+const REFRESH_EXPIRES = process.env.JWT_REFRESH_EXPIRES ?? '30d'
 
 export function generateTokenPair(payload: JWTPayload, refreshExpires?: string): TokenPair {
   const accessToken = jwt.sign(payload, ACCESS_SECRET, {

@@ -106,7 +106,7 @@ export function formatMySQLDateTime(date: Date | string = new Date()): string {
   return `${year}-${month}-${day} ${hours}:${mins}:${secs}`
 }
 
-export function getDeliveryFee(state: string, subtotal: number, weightInKg?: number): number {
+export function getDeliveryFee(state: string, weightInKg?: number): number {
   // Default to 1kg if weight is not provided
   const actualWeight = weightInKg || 1;
   

@@ -132,6 +132,7 @@ export function getSpeedafZone(city: string): SpeedafZone | null {
  * Supports splitting orders over 10 kg into multiple waybills
  */
 export function calculateSpeedafDeliveryFee(weightInKg: number, city: string, subtotal: number): SpeedafPricing {
+  void subtotal;
   const zone = getSpeedafZone(city);
   if (!zone) {
     // Fallback to Zone 4 if city not found

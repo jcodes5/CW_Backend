@@ -1617,10 +1617,28 @@ export const adminController = {
     }
 
     const product = await ProductModel.createProduct({
-      name, description, price: Number(price),
-      comparePrice: comparePrice ? Number(comparePrice) : undefined,
+      name, description, 
+      price: (() => {
+        const p = Number(price)
+        if (isNaN(p) || p < 0) throw new Error('Invalid price value')
+        return p
+      })(),
+      comparePrice: comparePrice ? (() => {
+        const cp = Number(comparePrice)
+        if (isNaN(cp) || cp < 0) throw new Error('Invalid compare price value')
+        return cp
+      })() : undefined,
       images: imageUrls, specifications, categoryId, brandId,
-      stock: Number(stock), weightKg: weightKg ? Number(weightKg) : 0.5,
+      stock: (() => {
+        const s = Number(stock)
+        if (isNaN(s) || s < 0 || !Number.isInteger(s)) throw new Error('Invalid stock value')
+        return s
+      })(),
+      weightKg: weightKg ? (() => {
+        const w = Number(weightKg)
+        if (isNaN(w) || w <= 0) throw new Error('Invalid weight value')
+        return w
+      })() : 0.5,
       tags: tags ?? [],
       isFeatured: Boolean(isFeatured), isNew: Boolean(isNew),
     })

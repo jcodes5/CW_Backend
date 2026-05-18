@@ -107,8 +107,6 @@ export function formatMySQLDateTime(date: Date | string = new Date()): string {
 }
 
 export function getDeliveryFee(state: string, subtotal: number, weightInKg?: number): number {
-  if (subtotal >= 25000) return 0
-  
   // Default to 1kg if weight is not provided
   const actualWeight = weightInKg || 1;
   

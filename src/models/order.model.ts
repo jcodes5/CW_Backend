@@ -386,7 +386,6 @@ function getDeliveryFee(state: string, subtotal: number, totalWeight: number, ci
   }
   
   // Fallback to static state-based pricing
-  if (subtotal >= 25000) return 0
   const feeMap: Record<string, number> = {
     Lagos: 2000, Ogun: 2500, Oyo: 3000, Osun: 3000, Ekiti: 3500,
     Ondo: 3500, 'FCT - Abuja': 3500, Rivers: 4000, Edo: 3500, Delta: 3500,

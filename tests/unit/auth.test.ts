@@ -78,12 +78,12 @@ describe('Helper Utilities', () => {
     expect(offset).toBe(24)
   })
 
-  it('should give free delivery for orders over ₦25,000', () => {
-    expect(getDeliveryFee('Lagos', 30000)).toBe(0)
+  it('should charge Lagos delivery fee', () => {
+    expect(getDeliveryFee('Lagos', 10000)).toBe(2000)
   })
 
-  it('should charge Lagos delivery fee for orders under threshold', () => {
-    expect(getDeliveryFee('Lagos', 10000)).toBe(2000)
+  it('should charge Lagos delivery fee regardless of order amount', () => {
+    expect(getDeliveryFee('Lagos', 30000)).toBe(2000)
   })
 
   it('should charge higher fee for distant states', () => {

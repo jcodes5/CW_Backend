@@ -178,7 +178,6 @@ export function getSpeedafDeliveryInfo(city: string, weightInKg: number, subtota
     fee: pricing.totalDeliveryFee,
     estimatedDelivery: pricing.estimatedDelivery,
     zone: pricing.zone,
-    isFree: pricing.totalDeliveryFee === 0,
-    label: pricing.totalDeliveryFee === 0 ? 'Free' : 'Speedaf Express',
+    label: 'Speedaf Express',
   };
 }

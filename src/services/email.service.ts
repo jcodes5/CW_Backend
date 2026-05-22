@@ -144,7 +144,7 @@ export async function sendOrderConfirmationEmail(
       <thead><tr><td><strong>Product</strong></td><td style="text-align:center"><strong>Qty</strong></td><td style="text-align:right"><strong>Price</strong></td></tr></thead>
       <tbody>
         ${itemRows}
-        <tr><td colspan="2">Delivery</td><td>${deliveryFee === 0 ? 'Free 🎉' : formatNaira(deliveryFee)}</td></tr>
+        <tr><td colspan="2">Delivery</td><td>${formatNaira(deliveryFee)}</td></tr>
         <tr class="total-row"><td colspan="2"><strong>Total</strong></td><td><strong>${formatNaira(total)}</strong></td></tr>
       </tbody>
     </table>

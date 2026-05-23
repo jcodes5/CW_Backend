@@ -61,11 +61,11 @@ router.post('/', authenticate, requireSuperAdmin, async (req, res) => {
 
     // Check if user exists
     const userResult = await query('SELECT id, role FROM users WHERE email = ?', [email])
-    if (!userResult[0] || (userResult[0] as []).length === 0) {
+    if (!userResult || userResult.length === 0) {
       return notFound(res, 'User not found')
     }
 
-    const userId = (userResult[0] as [{ id: string }])[0].id
+    const userId = (userResult[0] as { id: string }).id
 
     // Validate constraints
     if (role === 'super_admin') {
@@ -97,7 +97,7 @@ router.post('/', authenticate, requireSuperAdmin, async (req, res) => {
       [userId]
     )
 
-    const updatedUser = (updatedUserResult[0] as [any])[0]
+    const updatedUser = (updatedUserResult[0] as any)
 
     return created(res, {
       user: updatedUser,
@@ -132,11 +132,11 @@ router.delete('/:userId', authenticate, requireSuperAdmin, async (req, res) => {
 
     // Check if user exists
     const userResult = await query('SELECT id, role, email FROM users WHERE id = ?', [userId])
-    if (!userResult[0] || (userResult[0] as []).length === 0) {
+    if (!userResult || userResult.length === 0) {
       return notFound(res, 'User not found')
     }
 
-    const user = (userResult[0] as [{ id: string; email: string; role: string }])[0]
+    const user = (userResult[0] as { id: string; email: string; role: string })
 
     // Can't revoke own access
     if ((req as AuthRequest).user?.userId === userId) {
